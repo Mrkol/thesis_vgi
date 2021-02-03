@@ -1,0 +1,27 @@
+﻿{
+  "configurations": [
+    {
+      "name": "x64-Debug (default)",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\build\\${name}",
+      "installRoot": "${projectDir}\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "glfw3_DIR",
+          "value": "C:/Program Files (x86)/GLFW/lib/cmake/glfw3",
+          "type": "PATH"
+        },
+        {
+          "name": "Eigen3_DIR",
+          "value": "C:/Program Files (x86)/Eigen3/share/eigen3/cmake",
+          "type": "PATH"
+        }
+      ]
+    }
+  ]
+}
