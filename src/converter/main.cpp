@@ -1,6 +1,6 @@
 #include <cxxopts.hpp>
 
-#include "ExternalPartBreaker.hpp"
+#include "Gridify.hpp"
 
 
 int main(int argc, char** argv)
@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 
     auto parsed = options.parse(argc, argv);
 
-    ExternalPartBreaker::break_into_parts({parsed["i"].as<std::string>(), parsed["o"].as<std::string>()});
+    Gridify::gridify({parsed["i"].as<std::string>(), parsed["o"].as<std::string>()});
 
 
     return 0;
