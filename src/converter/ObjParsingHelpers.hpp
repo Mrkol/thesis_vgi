@@ -31,13 +31,9 @@ inline bool to_float(std::string_view view, float& result)
     return std::from_chars(view.data(), view.data() + view.size(), result).ec == std::errc{};
 }
 
-inline std::optional<std::tuple<float, float, float>> try_get_vertex(std::string_view line)
+inline std::optional<std::tuple<float, float, float>> try_get_triple(std::string_view line)
 {
-    auto[token, rest1] = next_token(line);
-
-    if (token != "v") { return {}; }
-    
-    auto[x_str, rest2] = next_token(rest1);
+    auto[x_str, rest2] = next_token(line);
     auto[y_str, rest3] = next_token(rest2);
     auto[z_str, rest4] = next_token(rest3);
 
@@ -52,4 +48,3 @@ inline std::optional<std::tuple<float, float, float>> try_get_vertex(std::string
 
     return {result};
 }
-
