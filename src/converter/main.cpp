@@ -1,5 +1,6 @@
 #include <cxxopts.hpp>
 
+#include "ToPlainConverters.hpp"
 #include "Gridify.hpp"
 
 
@@ -14,7 +15,16 @@ int main(int argc, char** argv)
 
     auto parsed = options.parse(argc, argv);
 
-    Gridify::gridify({parsed["i"].as<std::string>(), parsed["o"].as<std::string>()});
+    std::filesystem::path input = parsed["i"].as<std::string>();
+    std::filesystem::path output = parsed["o"].as<std::string>();
+
+    auto workdir = output / "work";
+    std::filesystem::create_directory(workdir);
+
+    auto plainfile = workdir / "plain";
+
+    obj_to_plain(input, plainfile, workdir);
+    gridify(plainfile, workdir);
 
 
     return 0;

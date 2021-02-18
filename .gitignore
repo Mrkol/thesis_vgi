@@ -2,3 +2,5 @@ build/**
 models/**
 install/**
 .vs/**
+.idea/**
+cmake-build-debug/**
