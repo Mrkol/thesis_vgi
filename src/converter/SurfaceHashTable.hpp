@@ -82,7 +82,7 @@ public:
 	std::size_t add(const ThickTriangle& t)
 	{
 		auto[a, b, c] = triangle_to_verts(t);
-		auto idx = impl.size();
+		auto idx = impl.size() / 3;
 
 		impl.emplace(SymmetricEdge{a, b}, idx);
 		impl.emplace(SymmetricEdge{b, c}, idx);

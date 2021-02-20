@@ -14,7 +14,6 @@ struct Patch
 	Eigen::Matrix4f planarity_quadric;
 	Eigen::Matrix4f orientation_quadric;
 
-	// can be summed when stitching
 	float area{};
 	float perimeter{};
 	std::size_t vertex_count{};
@@ -24,14 +23,19 @@ struct Patch
 	{
 		std::size_t patch_idx;
 		float length;
+		HashableCoords starting_vertice;
 	};
 
 	std::vector<BoundaryEdge> boundary;
+
+	inline std::size_t total_size()
+    {
+	    return sizeof(Patch) + boundary.size() * sizeof(BoundaryEdge);
+    }
 };
 
-constexpr float quadric_weight = 1;
+constexpr float planarity_weight = 1;
+constexpr float orientation_weight = 1;
 constexpr float compactness_weight = 1;
 
-
-// Has O(n log n) complexity \o/
-std::vector<Patch> cluster(std::filesystem::path plain);
+std::tuple<std::vector<Patch>, std::vector<std::size_t>> cluster(std::filesystem::path plain);

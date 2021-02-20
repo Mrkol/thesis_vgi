@@ -2,6 +2,7 @@
 
 #include "ToPlainConverters.hpp"
 #include "Gridify.hpp"
+#include "InCoreClustering.hpp"
 
 
 int main(int argc, char** argv)
@@ -19,12 +20,26 @@ int main(int argc, char** argv)
     std::filesystem::path output = parsed["o"].as<std::string>();
 
     auto workdir = output / "work";
-    std::filesystem::create_directory(workdir);
+    create_directory(workdir);
 
     auto plainfile = workdir / "plain";
 
     obj_to_plain(input, plainfile, workdir);
-    gridify(plainfile, workdir);
+
+    auto cellsdir = workdir / "cells";
+    create_directory(cellsdir);
+
+    gridify(plainfile, cellsdir);
+
+    std::vector<Patch> all_patches;
+    for (const auto& entry : std::filesystem::directory_iterator{cellsdir})
+    {
+        auto[patches, ids] = cluster(entry.path());
+        break;
+    }
+
+
+
 
 
     return 0;

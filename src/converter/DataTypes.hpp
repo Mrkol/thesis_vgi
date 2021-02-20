@@ -50,13 +50,16 @@ struct ThickTriangle
 
 static_assert(sizeof(ThickTriangle) == 9*4*3);
 
-inline std::tuple<SymmetricEdge, SymmetricEdge, SymmetricEdge> triangle_edges(const ThickTriangle& tri)
+inline std::array<HashableCoords, 3> triangle_verts(const ThickTriangle& tri)
 {
-	auto[a, b, c] = tri;
-	auto a_ = to_hashable_coords(a);
-	auto b_ = to_hashable_coords(b);
-	auto c_ = to_hashable_coords(c);
-	return {{a_, b_}, {b_, c_}, {c_, a_}};
+    auto[a, b, c] = tri;
+    return {to_hashable_coords(a), to_hashable_coords(b), to_hashable_coords(c)};
+}
+
+inline std::array<SymmetricEdge, 3> triangle_edges(const ThickTriangle& tri)
+{
+    auto[a, b, c] = triangle_verts(tri);
+    return {SymmetricEdge{a, b}, {b, c}, {c, a}};
 }
 
 struct Dimensions
