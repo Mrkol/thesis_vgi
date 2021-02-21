@@ -3,6 +3,7 @@
 #include "ToPlainConverters.hpp"
 #include "Gridify.hpp"
 #include "InCoreClustering.hpp"
+#include "OutOfCoreClustering.hpp"
 
 
 int main(int argc, char** argv)
@@ -31,15 +32,14 @@ int main(int argc, char** argv)
 
     gridify(plainfile, cellsdir);
 
-    std::vector<Patch> all_patches;
+    std::vector<ClusteringData> datas;
+    // TODO: threadpool for running this in parallel
     for (const auto& entry : std::filesystem::directory_iterator{cellsdir})
     {
-        auto[patches, ids] = cluster(entry.path());
-        break;
+        datas.push_back(incore_cluster(entry.path(), 1024*10));
     }
 
-
-
+    auto[patches, graph_vertices] = outofcore_cluster(datas);
 
 
     return 0;

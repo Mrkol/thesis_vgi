@@ -64,9 +64,9 @@ inline std::array<SymmetricEdge, 3> triangle_edges(const ThickTriangle& tri)
 
 struct Dimensions
 {
-	float min_x, max_x;
-	float min_y, max_y;
-	float min_z, max_z;
+	float min_x{}, max_x{};
+	float min_y{}, max_y{};
+	float min_z{}, max_z{};
 };
 
 inline float MeanDimension(Dimensions d)

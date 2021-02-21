@@ -27,7 +27,9 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
 	Dimensions dims;
 	in.read(reinterpret_cast<char*>(&dims), sizeof(dims));
 
-	auto part_count = std::max(size / (4096 * 1024 / 8), 1ul);
+	// Dumb heuristics. 1MB is the limit for 1 in-core merge for now
+	// TODO: improve
+	auto part_count = std::max(size / (1024 * 1024), 1ul);
 	auto grid_size = MeanDimension(dims) / part_count;
 
 	using BucketKey = std::tuple<int, int, int>;
