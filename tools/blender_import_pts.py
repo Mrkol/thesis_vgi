@@ -1,5 +1,6 @@
 import bpy
 import struct
+import random
 
 
 def read_pts(context, filepath):
@@ -15,6 +16,7 @@ def read_pts(context, filepath):
 
         # 9 floats per vertex, 3 vertices, 4 bytes per float
         vertices = []
+        uvs = []
         triangles = []
         data = f.read(9 * 3 * 4)
         while data:
@@ -22,13 +24,20 @@ def read_pts(context, filepath):
             x = len(vertices)
             triangles.append((x, x + 1, x + 2))
             vertices += [floats[3*i] for i in range(3)]
+            uvs += [floats[2 + 3*i] for i in  range(3)]
 
             data = f.read(9 * 3 * 4)
 
-        print(vertices)
-        print(triangles)
+        patch_count = int(uvs[0][1])
+
+        random_colors = [[random.uniform(0, 1) for j in range(3)] for i in range(patch_count)]
+
         me.from_pydata(vertices, [], triangles)
         me.update(calc_edges = True)
+
+        colors = me.vertex_colors.new()
+        for i in range(len(vertices)):
+            colors.data[i].color = random_colors[int(uvs[i][0])] + [0]
 
     # would normally load the data here
 

@@ -9,7 +9,7 @@ find_package(cxxopts 2.2 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror")
 
 file(GLOB_RECURSE src_common ${PROJECT_SOURCE_DIR}/src/common/*.cpp)
 file(GLOB_RECURSE src_renderer ${PROJECT_SOURCE_DIR}/src/renderer/*.cpp)

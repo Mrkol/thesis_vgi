@@ -9,7 +9,7 @@
 #include "DataTypes.hpp"
 
 
-void obj_to_plain(std::filesystem::path obj_file, std::filesystem::path output_file, std::filesystem::path workdir)
+void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::path& output_file, const std::filesystem::path& workdir)
 {
     if (!exists(obj_file)
         || exists(output_file)
@@ -88,9 +88,10 @@ void obj_to_plain(std::filesystem::path obj_file, std::filesystem::path output_f
             [](std::ifstream& stream, size_t index)
             {
                 stream.seekg(12 * index);
-                std::array<char, 12> bytes;
-                stream.read(bytes.data(), 12);
-                return *reinterpret_cast<std::tuple<float, float, float>*>(bytes.data());
+                std::tuple<float, float, float> result;
+                static_assert(sizeof(result) == 12);
+                stream.read(reinterpret_cast<char*>(&result), 12);
+                return result;
             };
 
         auto LookupVertData =
@@ -138,7 +139,7 @@ void obj_to_plain(std::filesystem::path obj_file, std::filesystem::path output_f
             auto v2 = std::apply(LookupVertData, second_opt.value());
             auto v3 = std::apply(LookupVertData, third_opt.value());
 
-            auto all_verts = ThickTriangle{v1, v2, v3};
+            ThickTriangle all_verts{v1, v2, v3};
 
             static_assert(sizeof(all_verts) == 4*9*3);
 

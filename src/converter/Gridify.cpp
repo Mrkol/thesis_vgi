@@ -34,17 +34,16 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
 
 	using BucketKey = std::tuple<int, int, int>;
 
-	std::unordered_map<BucketKey, std::ofstream> streams;
+    std::unordered_map<BucketKey, std::ofstream> streams;
 
-	auto StreamForTri =
-		[&streams, &output_directory]
+	auto stream_for_tri =
+		[&output_directory, &streams]
 		(int x, int y, int z) -> std::ofstream&
 		{
 			if (auto it = streams.find({x, y, z}); it != streams.end())
 			{
 				return it->second;
 			}
-
 
 			return streams.emplace(std::tuple{x, y, z},
 				std::ofstream{output_directory / (std::to_string(x) + ","
@@ -57,9 +56,10 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
 	ThickTriangle current;
 	while (in.read(reinterpret_cast<char*>(&current), sizeof(current)))
 	{
-		auto& stream = StreamForTri(current.a.x / grid_size,
-			current.a.y / grid_size,
-			current.a.z / grid_size);
+		auto& stream = stream_for_tri(
+		    int(current.a.x / grid_size),
+			int(current.a.y / grid_size),
+			int(current.a.z / grid_size));
 
 		stream.write(reinterpret_cast<char*>(&current), sizeof(current));
 	}

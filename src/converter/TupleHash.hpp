@@ -15,7 +15,8 @@ struct HashWrapper
 	std::size_t hash;
 };
 
-HashWrapper operator,(HashWrapper a, HashWrapper b)
+// Clang doesnt recognize this as being used below for some reason...
+[[maybe_unused]] inline HashWrapper operator^(HashWrapper a, HashWrapper b)
 {
 	return {a.hash ^ (b.hash * 0x9e3779b9 + (a.hash << 6) + (a.hash >> 2))};
 }
@@ -29,7 +30,7 @@ struct hash<std::tuple<Ts...>>
 	{
 		return std::apply([](const Ts&... ts)
 			{
-				return (HashWrapper{std::hash<Ts>{}(ts)}, ...).hash;
+				return (HashWrapper{std::hash<Ts>{}(ts)} ^ ...).hash;
 			}, tuple);
 	}
 };

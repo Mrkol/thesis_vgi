@@ -21,9 +21,9 @@ inline float length(const SymmetricEdge& edge)
 
 struct ThickVertex
 {
-	float x, y, z;
-	float nx, ny, nz;
-	float u, v, w;
+	float x {}, y {}, z {};
+	float nx{}, ny{}, nz{};
+	float u {}, v {}, w {};
 };
 
 inline Eigen::Vector4f projective_position(const ThickVertex& v)

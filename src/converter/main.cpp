@@ -1,4 +1,5 @@
 #include <cxxopts.hpp>
+#include <fstream>
 
 #include "ToPlainConverters.hpp"
 #include "Gridify.hpp"
@@ -32,15 +33,51 @@ int main(int argc, char** argv)
 
     gridify(plainfile, cellsdir);
 
-    std::vector<ClusteringData> datas;
-    // TODO: threadpool for running this in parallel
+    std::vector<std::filesystem::path> cells;
+    // order is indeterminate for directory_iterator, so we need to save the paths
     for (const auto& entry : std::filesystem::directory_iterator{cellsdir})
     {
-        datas.push_back(incore_cluster(entry.path(), 1024*10));
+        cells.push_back(entry.path());
     }
 
-    auto[patches, graph_vertices] = outofcore_cluster(datas);
+    std::vector<ClusteringData> datas;
+    datas.reserve(cells.size());
+    // TODO: threadpool for running this in parallel
+    for (const auto& cell : cells)
+    {
+        datas.push_back(incore_cluster(cell, 1024*10));
+    }
 
+    // After this the mapping of outofcore cluster is correct
+    {
+        std::filesystem::remove(plainfile);
+        std::ofstream plain_rewrite{plainfile, std::ios_base::app};
+        for (const auto& cell : cells)
+        {
+            std::ifstream in{cell};
+            plain_rewrite << in.rdbuf();
+        }
+    }
+
+    auto[patches, graph_vertices, mapping] = outofcore_cluster(datas);
+
+    // TODO: remove, temporary debug thing.
+    {
+        std::ifstream plain{plainfile};
+        std::ofstream clustered{workdir / "clustered"};
+
+        ThickTriangle tri{};
+        std::size_t idx = 0;
+        while (plain.read(reinterpret_cast<char*>(&tri), sizeof(tri)))
+        {
+            auto cluster_id = mapping[idx];
+            tri.a.u = tri.b.u = tri.c.u = cluster_id;
+            tri.a.v = tri.b.v = tri.c.v = patches.size();
+            tri.a.w = tri.b.w = tri.c.w = 0;
+            clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
+            ++idx;
+        }
+    }
 
     return 0;
 }

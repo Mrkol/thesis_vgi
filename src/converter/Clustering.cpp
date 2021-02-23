@@ -1,4 +1,4 @@
-#include "Clustering.hpp"
+#include "SurfaceHashTable.hpp"
 
 #include <map>
 #include <set>
@@ -6,7 +6,7 @@
 
 #include "DisjointSetUnion.hpp"
 #include "DebugException.hpp"
-
+#include "Clustering.hpp"
 
 
 void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t> &mapping)
@@ -15,7 +15,10 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
     {
         for (auto& edge : patch.boundary)
         {
-            edge.patch_idx = mapping[edge.patch_idx];
+            if (edge.patch_idx != Patch::NONE)
+            {
+                edge.patch_idx = mapping[edge.patch_idx];
+            }
         }
     }
 
@@ -28,6 +31,11 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
             updated_set.insert(mapping[idx]);
         }
         set = std::move(updated_set);
+    }
+
+    for (auto& i : data.accumulated_mapping)
+    {
+        i = mapping[i];
     }
 }
 
@@ -142,16 +150,30 @@ bool merge_preserve_topological_invariants(std::size_t first, std::size_t second
             return false;
         }
 
-        while (merged_boundary[i].patch_idx == current) { ++i; }
+        while (i < merged_boundary.size() && merged_boundary[i].patch_idx == current) { ++i; }
         already_met.insert(current);
     }
 
     return true;
 }
 
-ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_t, std::size_t)> stopping_criterion)
+void rotate_boundary(std::vector<Patch::BoundaryEdge>& merged_boundary)
 {
-    auto&[patches, border_graph_vertices] = data;
+    // Fixup the boundary so that process_boundary and topinv check code is simpler
+    // TODO: this is not optimal, replace vector with a custom cyclic vector
+    if (merged_boundary.front().patch_idx == merged_boundary.back().patch_idx)
+    {
+        auto patch = merged_boundary.front().patch_idx;
+        auto it = std::find_if(merged_boundary.begin(), merged_boundary.end(),
+                               [patch](const Patch::BoundaryEdge& e){ return e.patch_idx != patch; });
+        std::rotate(merged_boundary.begin(), it, merged_boundary.end());
+    }
+}
+
+ClusteringData cluster(ClusteringData data, const std::function<bool(float, std::size_t, std::size_t)>& stopping_criterion)
+{
+    auto& patches = data.patches;
+    auto& border_graph_vertices = data.border_graph_vertices;
 
     DisjointSetUnion dsu{patches.size()};
 
@@ -160,20 +182,35 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
     std::unordered_map<SymmetricPair<std::size_t>, decltype(queue)::const_iterator> position_in_queue;
     position_in_queue.reserve(3*patches.size());
 
+    auto enqueue_neighbors =
+        [&data, &queue, &position_in_queue]
+        (std::size_t idx, const std::function<bool(std::size_t)>& filter)
+        {
+            std::unordered_map<std::size_t, float> neighbors;
+            for (auto[neighbor, length, _] : data.patches[idx].boundary)
+            {
+                if (neighbor != Patch::NONE && filter(neighbor))
+                {
+                    neighbors[neighbor] += length;
+                }
+            }
+
+            for (auto[neighbor, common_perimeter] : neighbors)
+            {
+                auto total_error = after_merge_error(data.patches[idx], data.patches[neighbor], common_perimeter);
+                SymmetricPair<std::size_t> our_pair{idx, neighbor};
+
+                position_in_queue.emplace(our_pair, queue.emplace(total_error, our_pair));
+            }
+        };
+
+
     std::size_t total_patches_size = 0;
     for (std::size_t i = 0; i < patches.size(); ++i)
     {
         total_patches_size += patches[i].total_size();
-        for (auto[neighbor, length, _] : patches[i].boundary)
-        {
-            if (neighbor == Patch::NONE || neighbor > i)
-            {
-                continue;
-            }
-            SymmetricPair<std::size_t> pair{i, neighbor};
-            float error = after_merge_error(patches[i], patches[neighbor], length);
-            position_in_queue.emplace(pair, queue.emplace(error, pair));
-        }
+
+        enqueue_neighbors(i, [i](std::size_t neighbor) { return neighbor > i; });
     }
 
     auto remove_old_contraction = [&position_in_queue, &queue](SymmetricPair<std::size_t> contr)
@@ -192,6 +229,9 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
     std::size_t current_patch_count = patches.size();
     while (!queue.empty() && stopping_criterion(queue.begin()->first, current_patch_count, total_patches_size))
     {
+#ifdef CLUSTERING_CONSISTENCY_CHECKS
+        check_consistency(data);
+#endif
         auto[first, second] = queue.begin()->second;
 
         if (first != dsu.get(first) || second != dsu.get(second))
@@ -202,7 +242,7 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
         remove_old_contraction({first, second});
 
         auto update_boundary =
-            [&dsu](std::vector<Patch::BoundaryEdge> &boundary)
+            [&dsu](std::vector<Patch::BoundaryEdge>& boundary)
             {
                 for (auto& edge : boundary)
                 {
@@ -211,6 +251,9 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
                         edge.patch_idx = dsu.get(edge.patch_idx);
                     }
                 }
+                // After updating edges the front and the back might have become the same chunk,
+                // therefore the fixup
+                rotate_boundary(boundary);
             };
 
         update_boundary(patches[first].boundary);
@@ -253,16 +296,10 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
             process_boundary(first, second);
             process_boundary(second, first);
 
-            // Fixup the boundary so that process_boundary and topinv check code is simpler
-            if (merged_boundary.front().patch_idx == merged_boundary.back().patch_idx)
-            {
-                auto patch = merged_boundary.front().patch_idx;
-                auto it = std::find_if(merged_boundary.begin(), merged_boundary.end(),
-                                       [patch](const Patch::BoundaryEdge& e){ return e.patch_idx != patch; });
-                std::rotate(merged_boundary.begin(), it, merged_boundary.end());
-            }
+            rotate_boundary(merged_boundary);
         }
 
+        // This assumes a fixed up boundary
         if (!merge_preserve_topological_invariants(first, second, merged_boundary, border_graph_vertices))
         {
             continue;
@@ -310,6 +347,8 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
             patches[merged].perimeter += patches[other].perimeter;
             patches[merged].perimeter -= double_common_perimeter;
 
+            patches[merged].has_adjacent_nones |= patches[other].has_adjacent_nones;
+
             patches[merged].area += patches[other].area;
 
             patches[merged].vertex_count += patches[other].vertex_count;
@@ -320,24 +359,11 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
         }
 
         // Recalculate neighbor merge errors and requeue em
-        {
-            std::unordered_map<std::size_t, float> neighbors;
-            for (auto[neighbor, length, _] : patches[merged].boundary)
+        enqueue_neighbors(merged, [&neighbor_contractions_removed](std::size_t neighbor)
             {
-                if (neighbor != Patch::NONE && neighbor_contractions_removed.contains(neighbor))
-                {
-                    neighbors[neighbor] += length;
-                }
-            }
+                return neighbor_contractions_removed.contains(neighbor);
+            });
 
-            for (auto[neighbor, common_perimeter] : neighbors)
-            {
-                auto total_error = after_merge_error(patches[merged], patches[neighbor], common_perimeter);
-                SymmetricPair<std::size_t> our_pair{merged, neighbor};
-
-                position_in_queue.emplace(our_pair, queue.emplace(total_error, our_pair));
-            }
-        }
 
         // Update border graph
         for (auto edge : patches[merged].boundary)
@@ -393,9 +419,63 @@ ClusteringData cluster(ClusteringData data, std::function<bool(float, std::size_
         result.patches.push_back(std::move(patches[id]));
     }
     result.border_graph_vertices = std::move(border_graph_vertices);
+    result.accumulated_mapping = std::move(data.accumulated_mapping);
 
     // We've thrown out some patches, the indexing changed, need to update it.
     reindex_clustering_data(result, old_to_new);
 
     return result;
+}
+
+void check_consistency(const ClusteringData& data)
+{
+    BorderGraphVertices vert_checker;
+    SurfaceHashTable<float> edge_checker;
+    for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
+    {
+        const auto& patch = data.patches[idx];
+        for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
+        {
+            vert_checker[it->starting_vertice].insert(idx);
+            auto next = std::next(it) == patch.boundary.end() ? patch.boundary.begin() : std::next(it);
+            edge_checker.add({it->starting_vertice, next->starting_vertice}, idx);
+        }
+    }
+
+    for (auto&[point, set] : vert_checker)
+    {
+        auto it = data.border_graph_vertices.find(point);
+        if (set.size() >= 3
+            && (it == data.border_graph_vertices.end()
+                || it->second != set))
+        {
+            throw std::logic_error("Clustering data is inconsistent!");
+        }
+    }
+
+    for (auto&[edge, pair] : edge_checker)
+    {
+        auto check = [&, e = edge](std::size_t idx, std::size_t neighbor)
+        {
+            auto& boundary = data.patches[idx].boundary;
+            std::size_t found = 0;
+            while (found != boundary.size())
+            {
+                auto next = found + 1 == boundary.size() ? 0 : found + 1;
+                if (e == SymmetricEdge{boundary[found].starting_vertice, boundary[next].starting_vertice})
+                {
+                    break;
+                }
+            }
+
+            if (found == boundary.size()
+                || boundary[found].patch_idx != neighbor)
+            {
+                throw std::logic_error("Clustering data is inconsistent!");
+            }
+        };
+
+        check(pair.first, pair.second);
+        check(pair.second, pair.first);
+    }
 }

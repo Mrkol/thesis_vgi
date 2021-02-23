@@ -64,6 +64,11 @@ ClusteringData incore_cluster(std::filesystem::path plain, std::size_t target_me
 			{table.find_not(e1, idx), length(e1), v1},
 			{table.find_not(e2, idx), length(e2), v2},
 			{table.find_not(e3, idx), length(e3), v3}};
+
+		patch.has_adjacent_nones = patch.boundary[0].patch_idx == Patch::NONE
+		    || patch.boundary[1].patch_idx == Patch::NONE
+		    || patch.boundary[2].patch_idx == Patch::NONE;
+
         border_graph_vertices[v1].insert(idx);
         border_graph_vertices[v2].insert(idx);
         border_graph_vertices[v3].insert(idx);
@@ -88,11 +93,15 @@ ClusteringData incore_cluster(std::filesystem::path plain, std::size_t target_me
 		}
 	}
 
+	std::vector<std::size_t> identity_mapping;
+    identity_mapping.resize(triangles.size());
+	std::iota(identity_mapping.begin(), identity_mapping.end(), 0);
+
 	auto stopping_criterion =
-	    [target_memory, total = patches.size()](float error, std::size_t patch_count, std::size_t memory)
+	    [target_memory, total = patches.size()](float /*error*/, std::size_t patch_count, std::size_t memory)
         {
             return memory > target_memory || 4*patch_count > total;
         };
 
-	return cluster({std::move(patches), std::move(border_graph_vertices)}, stopping_criterion);
+	return cluster({std::move(patches), std::move(border_graph_vertices), std::move(identity_mapping)}, stopping_criterion);
 };
