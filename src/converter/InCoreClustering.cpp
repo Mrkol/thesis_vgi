@@ -15,7 +15,7 @@
 
 
 
-ClusteringData incore_cluster(std::filesystem::path plain, std::size_t target_memory)
+ClusteringData incore_cluster(const std::filesystem::path& plain, std::size_t target_memory)
 {
 	std::vector<ThickTriangle> triangles;
 	triangles.resize(file_size(plain) / sizeof(ThickTriangle));
@@ -56,7 +56,7 @@ ClusteringData incore_cluster(std::filesystem::path plain, std::size_t target_me
 			Eigen::Vector4f v2 = projective_position(t.c) - projective_position(t.b);
 			vector_area = v1.cross3(v2).block<3, 1>(0, 0);
 		}
-		patch.area = vector_area.norm();
+		patch.area = vector_area.norm() / 2;
 		patch.vertex_count = 3;
 
         auto[v1, v2, v3] = triangle_verts(t);
@@ -87,8 +87,8 @@ ClusteringData incore_cluster(std::filesystem::path plain, std::size_t target_me
 
 		{
 			Eigen::Vector4f tri_normal;
-			tri_normal.block<3, 1>(0, 0) = vector_area.normalized();
-			tri_normal(3, 0) = -1;
+			tri_normal.block<3, 1>(0, 0) = -vector_area.normalized();
+			tri_normal(3, 0) = 1;
 			patch.orientation_quadric = tri_normal * tri_normal.transpose() * patch.area;
 		}
 	}

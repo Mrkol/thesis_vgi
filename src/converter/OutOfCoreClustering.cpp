@@ -26,12 +26,6 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
             reindex_clustering_data(data, mapping);
         }
     }
-#ifdef CLUSTERING_CONSISTENCY_CHECKS
-    for (const auto& data : datas)
-    {
-        check_consistency(data);
-    }
-#endif
 
     // Reconstruct cross-data adjacency information
     SurfaceHashTable<float> potential_common_edges;
@@ -48,9 +42,9 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
                     auto next = std::next(it) == patch.boundary.end() ? patch.boundary.begin() : std::next(it);
                     if (it->patch_idx == Patch::NONE)
                     {
-                        potential_common_edges.add({it->starting_vertice, next->starting_vertice}, current_idx);
-                        potential_border_graph_vertices[it->starting_vertice].insert(current_idx);
-                        potential_border_graph_vertices[next->starting_vertice].insert(current_idx);
+                        potential_common_edges.add({it->starting_vertex, next->starting_vertex}, current_idx);
+                        potential_border_graph_vertices[it->starting_vertex].insert(current_idx);
+                        potential_border_graph_vertices[next->starting_vertex].insert(current_idx);
                     }
                 }
             }
@@ -74,7 +68,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
                     if (it->patch_idx == Patch::NONE)
                     {
                         auto idx = potential_common_edges.find_not(
-                            {it->starting_vertice, next->starting_vertice}, current_idx);
+                            {it->starting_vertex, next->starting_vertex}, current_idx);
 
                         it->patch_idx = idx;
                     }
@@ -124,7 +118,7 @@ ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results)
         [](float error, std::size_t /*patch_count*/, std::size_t /*memory*/)
         {
             // TODO: Better criterion
-            return error < 1e7;
+            return error < 100;
         };
 
     return cluster(std::move(data), stopping_criterion);

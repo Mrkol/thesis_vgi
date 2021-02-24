@@ -82,7 +82,7 @@ def unregister():
 
 
 if __name__ == "__main__":
-    register()
+    # register()
 
     # test call
     bpy.ops.import_test.pts('INVOKE_DEFAULT')

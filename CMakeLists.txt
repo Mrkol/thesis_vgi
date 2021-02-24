@@ -7,6 +7,12 @@ find_package(Vulkan REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(cxxopts 2.2 REQUIRED)
 
+option(CHECKS "Enables slow consistency checks" OFF)
+
+if (CHECKS)
+    add_definitions(-DCLUSTERING_CONSISTENCY_CHECKS)
+endif ()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror")

@@ -3,6 +3,7 @@
 #include <map>
 #include <set>
 #include <numbers>
+#include <iostream>
 
 #include "DisjointSetUnion.hpp"
 #include "DebugException.hpp"
@@ -42,7 +43,7 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
 Eigen::Vector4f least_squares_plane(const Eigen::Matrix4f &planarity_quadric)
 {
     Eigen::Matrix3f A = planarity_quadric.block<3, 3>(0, 0);
-    Eigen::Vector3f b = planarity_quadric.block<3, 1>(0, 3) * 2;
+    Eigen::Vector3f b = planarity_quadric.block<3, 1>(0, 3);
     float c = planarity_quadric(3, 3);
     Eigen::Matrix3f Z = A - b*b.transpose()/c;
 
@@ -59,14 +60,16 @@ Eigen::Vector4f least_squares_plane(const Eigen::Matrix4f &planarity_quadric)
     return result;
 }
 
-float planarity_error(const Eigen::Matrix4f &planarity_quadric, std::size_t vertex_count, const Eigen::Vector4f &plane)
+float planarity_error(const Eigen::Matrix4f& planarity_quadric, std::size_t vertex_count, const Eigen::Vector4f& plane)
 {
-    return (plane.transpose()*planarity_quadric*plane / vertex_count).value();
+    return (plane.transpose()*planarity_quadric*plane).value() / vertex_count;
 }
 
-float orientation_error(const Eigen::Matrix4f &orientation_quadric, float area, const Eigen::Vector4f &plane)
+float orientation_error(const Eigen::Matrix4f& orientation_quadric, float area, const Eigen::Vector4f& plane)
 {
-    return (plane.transpose()*orientation_quadric*plane / area).value();
+    Eigen::Vector4f normal = plane;
+    normal(3, 0) = 1;
+    return (normal.transpose()*orientation_quadric*normal).value() / area;
 }
 
 float irregularity(float perimeter, float area)
@@ -79,7 +82,7 @@ float shape_error(float gamma, float gamma1, float gamma2)
     return (gamma - std::max(gamma1, gamma2))/gamma;
 }
 
-float after_merge_error(const Patch &first, const Patch &second, float common_perimeter)
+float after_merge_error(const Patch& first, const Patch& second, const IntersectionData& data)
 {
     Eigen::Matrix4f plan_quad = first.planarity_quadric
                                 + second.planarity_quadric;
@@ -88,32 +91,50 @@ float after_merge_error(const Patch &first, const Patch &second, float common_pe
 
     auto plane = least_squares_plane(plan_quad);
 
-    float perimeter = first.perimeter + second.perimeter - 2*common_perimeter;
+    float perimeter = first.perimeter + second.perimeter - 2*data.common_perimeter;
     float area = first.area + second.area;
-    std::size_t vertex_count = first.vertex_count + second.vertex_count;
+    std::size_t vertex_count = first.vertex_count + second.vertex_count - data.common_vertex_count;
 
-    auto gamma1 = irregularity(first.perimeter, std::sqrt(first.area));
-    auto gamma2 = irregularity(second.perimeter, std::sqrt(second.area));
+    auto gamma1 = irregularity(first.perimeter, first.area);
+    auto gamma2 = irregularity(second.perimeter, second.area);
 
     float gamma = irregularity(perimeter, area);
 
-    return planarity_weight * planarity_error(plan_quad, vertex_count, plane)
-           + orientation_weight * orientation_error(orient_quad, area, plane)
-           + compactness_weight * shape_error(gamma, gamma1, gamma2);
+
+    float pe = planarity_error(plan_quad, vertex_count, plane);
+    float oe = orientation_error(orient_quad, area, plane);
+    float se = shape_error(gamma, gamma1, gamma2);
+
+    return planarity_weight * pe
+           + orientation_weight * oe
+           + compactness_weight * se;
 }
 
 bool merge_preserve_topological_invariants(std::size_t first, std::size_t second,
     const std::vector<Patch::BoundaryEdge>& merged_boundary, const BorderGraphVertices& border_graph_vertices)
 {
     // Topological constraint: all patch intersections must be be either empty, a point, or
-    // homeomorphic to a segment. If this merge results in something else, dont do it.
+    // homeomorphic to a segment. Also all patches shall be homeomorphic to a disk.
+    // If this merge results in something else, dont do it.
+
+    {
+        std::unordered_set<HashableCoords> unique_coords;
+        for (auto& edge : merged_boundary)
+        {
+            unique_coords.insert(edge.starting_vertex);
+        }
+        if (unique_coords.size() != merged_boundary.size())
+        {
+            return false;
+        }
+    }
 
     std::unordered_set<std::size_t> single_point_intersections;
     for (auto it = merged_boundary.begin(); it != merged_boundary.end(); ++it)
     {
         auto prev = it == merged_boundary.begin() ? std::prev(merged_boundary.end()) : std::prev(it);
 
-        auto patches = border_graph_vertices.find(it->starting_vertice);
+        auto patches = border_graph_vertices.find(it->starting_vertex);
         if (patches != border_graph_vertices.end())
         {
             // Approximately constant time due to typical models not
@@ -186,18 +207,19 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
         [&data, &queue, &position_in_queue]
         (std::size_t idx, const std::function<bool(std::size_t)>& filter)
         {
-            std::unordered_map<std::size_t, float> neighbors;
+            std::unordered_map<std::size_t, IntersectionData> neighbors;
             for (auto[neighbor, length, _] : data.patches[idx].boundary)
             {
                 if (neighbor != Patch::NONE && filter(neighbor))
                 {
-                    neighbors[neighbor] += length;
+                    neighbors[neighbor].common_vertex_count += length;
+                    neighbors[neighbor].common_perimeter += 1;
                 }
             }
 
-            for (auto[neighbor, common_perimeter] : neighbors)
+            for (auto[neighbor, inter_data] : neighbors)
             {
-                auto total_error = after_merge_error(data.patches[idx], data.patches[neighbor], common_perimeter);
+                auto total_error = after_merge_error(data.patches[idx], data.patches[neighbor], inter_data);
                 SymmetricPair<std::size_t> our_pair{idx, neighbor};
 
                 position_in_queue.emplace(our_pair, queue.emplace(total_error, our_pair));
@@ -261,14 +283,11 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
 
         // Build common boundary and check for topological invariant
         std::vector<Patch::BoundaryEdge> merged_boundary;
-        std::size_t double_common_vertex_count = 0;
-        float double_common_perimeter = 0;
+        IntersectionData merge_intersection_data;
 
         {
-            //TODO: dont capture so much stuff
             auto process_boundary =
-                [&data, &merged_boundary, &double_common_perimeter,
-                    &double_common_vertex_count]
+                [&data, &merged_boundary]
                     (std::size_t patch, std::size_t other)
                 {
                     auto matching = [other](Patch::BoundaryEdge e) { return e.patch_idx == other; };
@@ -282,19 +301,32 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
                         throw std::logic_error("Trying to merge non-neighboring patches!");
                     }
 
+                    float common_perimeter = 0;
                     for (auto it = begin; it != end; ++it)
                     {
-                        double_common_perimeter += it->length;
+                        common_perimeter += it->length;
                     }
 
-                    merged_boundary.reserve(boundary.size() - std::distance(begin, end));
+                    merged_boundary.reserve(merged_boundary.size() + boundary.size() - std::distance(begin, end));
                     std::copy(end, boundary.end(), std::back_inserter(merged_boundary));
                     std::copy(boundary.begin(), begin, std::back_inserter(merged_boundary));
-                    double_common_vertex_count += std::distance(begin, end) + 1;
+                    return IntersectionData{common_perimeter, std::size_t(std::distance(begin, end)) + 1};
                 };
 
-            process_boundary(first, second);
-            process_boundary(second, first);
+            merge_intersection_data = process_boundary(first, second);
+            auto alt_inter_data = process_boundary(second, first);
+
+#ifdef CLUSTERING_CONSISTENCY_CHECKS
+            if ((merge_intersection_data.common_perimeter - alt_inter_data.common_perimeter)
+                    / merge_intersection_data.common_perimeter > 1e-4
+                || merge_intersection_data.common_vertex_count != alt_inter_data.common_vertex_count)
+            {
+                throw std::logic_error("Boundaries produced inconsistent intersection data!");
+            }
+#else
+            // Suppress unused warning
+            (void) alt_inter_data;
+#endif
 
             rotate_boundary(merged_boundary);
         }
@@ -342,17 +374,16 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
 
         {
             patches[merged].boundary = std::move(merged_boundary);
-            patches[other].boundary.clear();
 
             patches[merged].perimeter += patches[other].perimeter;
-            patches[merged].perimeter -= double_common_perimeter;
+            patches[merged].perimeter -= 2 * merge_intersection_data.common_perimeter;
 
             patches[merged].has_adjacent_nones |= patches[other].has_adjacent_nones;
 
             patches[merged].area += patches[other].area;
 
             patches[merged].vertex_count += patches[other].vertex_count;
-            patches[merged].vertex_count -= double_common_vertex_count;
+            patches[merged].vertex_count -= merge_intersection_data.common_vertex_count;
 
             patches[merged].planarity_quadric += patches[other].planarity_quadric;
             patches[merged].orientation_quadric += patches[other].orientation_quadric;
@@ -368,7 +399,7 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
         // Update border graph
         for (auto edge : patches[merged].boundary)
         {
-            auto it = border_graph_vertices.find(edge.starting_vertice);
+            auto it = border_graph_vertices.find(edge.starting_vertex);
             if (it == border_graph_vertices.end())
             {
                 continue;
@@ -434,11 +465,20 @@ void check_consistency(const ClusteringData& data)
     for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
     {
         const auto& patch = data.patches[idx];
+        float perimeter = 0;
         for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
         {
-            vert_checker[it->starting_vertice].insert(idx);
+            vert_checker[it->starting_vertex].insert(idx);
             auto next = std::next(it) == patch.boundary.end() ? patch.boundary.begin() : std::next(it);
-            edge_checker.add({it->starting_vertice, next->starting_vertice}, idx);
+            SymmetricEdge edge{it->starting_vertex, next->starting_vertex};
+            edge_checker.add(edge, idx);
+            perimeter += length(edge);
+        }
+
+        if (std::abs(perimeter - patch.perimeter) / perimeter > 1e-3)
+        {
+            throw std::logic_error(
+                "Clustering data is inconsistent! Perimeter doesn't match the actual boundary perimeter!");
         }
     }
 
@@ -462,7 +502,7 @@ void check_consistency(const ClusteringData& data)
             while (found != boundary.size())
             {
                 auto next = found + 1 == boundary.size() ? 0 : found + 1;
-                if (e == SymmetricEdge{boundary[found].starting_vertice, boundary[next].starting_vertice})
+                if (e == SymmetricEdge{boundary[found].starting_vertex, boundary[next].starting_vertex})
                 {
                     break;
                 }

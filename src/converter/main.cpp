@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     // TODO: threadpool for running this in parallel
     for (const auto& cell : cells)
     {
-        datas.push_back(incore_cluster(cell, 1024*10));
+        datas.push_back(incore_cluster(cell, 100*1024*1024 / cells.size()));
     }
 
     // After this the mapping of outofcore cluster is correct
