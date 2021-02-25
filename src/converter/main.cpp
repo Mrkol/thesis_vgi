@@ -1,6 +1,9 @@
 #include <cxxopts.hpp>
 #include <fstream>
 
+#include "common/StaticThreadPool.hpp"
+#include "common/ScopedTimer.hpp"
+
 #include "ToPlainConverters.hpp"
 #include "Gridify.hpp"
 #include "InCoreClustering.hpp"
@@ -26,12 +29,18 @@ int main(int argc, char** argv)
 
     auto plainfile = workdir / "plain";
 
-    obj_to_plain(input, plainfile, workdir);
+    {
+        ScopedTimer timer{"plainification"};
+        obj_to_plain(input, plainfile, workdir);
+    }
 
     auto cellsdir = workdir / "cells";
     create_directory(cellsdir);
 
-    gridify(plainfile, cellsdir);
+    {
+        ScopedTimer timer{"gridify"};
+        gridify(plainfile, cellsdir);
+    }
 
     std::vector<std::filesystem::path> cells;
     // order is indeterminate for directory_iterator, so we need to save the paths
@@ -41,15 +50,24 @@ int main(int argc, char** argv)
     }
 
     std::vector<ClusteringData> datas;
-    datas.reserve(cells.size());
-    // TODO: threadpool for running this in parallel
-    for (const auto& cell : cells)
+    datas.resize(cells.size());
+
+    std::size_t memory_limit = 100 * 1024 * 1024 / cells.size();
     {
-        datas.push_back(incore_cluster(cell, 100*1024*1024 / cells.size()));
+        ScopedTimer timer("incore clustering");
+        StaticThreadPool pool;
+        for (std::size_t i = 0; i < cells.size(); ++i)
+        {
+            pool.submit([&datas, &cells, memory_limit, i]()
+                {
+                    datas[i] = incore_cluster(cells[i], memory_limit);
+                });
+        }
     }
 
     // After this the mapping of outofcore cluster is correct
     {
+        ScopedTimer timer("cell concatenation");
         std::filesystem::remove(plainfile);
         std::ofstream plain_rewrite{plainfile, std::ios_base::app};
         for (const auto& cell : cells)
@@ -59,10 +77,16 @@ int main(int argc, char** argv)
         }
     }
 
-    auto[patches, graph_vertices, mapping] = outofcore_cluster(datas);
+    ClusteringData result_data;
+    {
+        ScopedTimer timer("out of core clustering");
+        result_data  = outofcore_cluster(std::move(datas));
+    }
 
     // TODO: remove, temporary debug thing.
     {
+        ScopedTimer timer("debug output");
+
         std::ifstream plain{plainfile};
         std::ofstream clustered{workdir / "clustered"};
 
@@ -70,9 +94,9 @@ int main(int argc, char** argv)
         std::size_t idx = 0;
         while (plain.read(reinterpret_cast<char*>(&tri), sizeof(tri)))
         {
-            auto cluster_id = mapping[idx];
+            auto cluster_id = result_data.accumulated_mapping[idx];
             tri.a.u = tri.b.u = tri.c.u = cluster_id;
-            tri.a.v = tri.b.v = tri.c.v = patches.size();
+            tri.a.v = tri.b.v = tri.c.v = result_data.patches.size();
             tri.a.w = tri.b.w = tri.c.w = 0;
             clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
             ++idx;

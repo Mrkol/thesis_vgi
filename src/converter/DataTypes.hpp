@@ -2,6 +2,7 @@
 
 #include <tuple>
 #include <cmath>
+#include <array>
 #include <Eigen/Dense>
 
 #include "TupleHash.hpp"

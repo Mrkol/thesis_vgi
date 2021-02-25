@@ -68,7 +68,7 @@ class ImportPTS(Operator, ImportHelper):
 
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
-    self.layout.operator(ImportPTS.bl_idname, text="Text Import Operator")
+    self.layout.operator(ImportPTS.bl_idname, text="Plain Triangle Soup")
 
 
 def register():
@@ -82,7 +82,4 @@ def unregister():
 
 
 if __name__ == "__main__":
-    # register()
-
-    # test call
-    bpy.ops.import_test.pts('INVOKE_DEFAULT')
+    register()
