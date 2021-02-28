@@ -46,6 +46,7 @@ public:
             throw std::logic_error{"Trying to double close a queue!"};
         }
         closed = true;
+        is_empty.notify_all();
     }
 
 private:
