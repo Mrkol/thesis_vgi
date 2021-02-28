@@ -21,7 +21,7 @@ ClusteringData incore_cluster(const std::filesystem::path& plain, std::size_t ta
 	triangles.resize(file_size(plain) / sizeof(ThickTriangle));
 
 	{
-		std::ifstream in{plain};
+		std::ifstream in{plain, std::ios_base::binary};
         in.read(reinterpret_cast<char*>(triangles.data()), file_size(plain));
 	}
 

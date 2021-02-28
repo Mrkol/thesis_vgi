@@ -69,10 +69,10 @@ int main(int argc, char** argv)
     {
         ScopedTimer timer("cell concatenation");
         std::filesystem::remove(plainfile);
-        std::ofstream plain_rewrite{plainfile, std::ios_base::app};
+        std::ofstream plain_rewrite{plainfile, std::ios_base::app | std::ios_base::binary};
         for (const auto& cell : cells)
         {
-            std::ifstream in{cell};
+            std::ifstream in{cell, std::ios_base::binary};
             plain_rewrite << in.rdbuf();
         }
     }
@@ -87,16 +87,16 @@ int main(int argc, char** argv)
     {
         ScopedTimer timer("debug output");
 
-        std::ifstream plain{plainfile};
-        std::ofstream clustered{workdir / "clustered"};
+        std::ifstream plain{plainfile, std::ios_base::binary};
+        std::ofstream clustered{workdir / "clustered", std::ios_base::binary};
 
         ThickTriangle tri{};
         std::size_t idx = 0;
         while (plain.read(reinterpret_cast<char*>(&tri), sizeof(tri)))
         {
             auto cluster_id = result_data.accumulated_mapping[idx];
-            tri.a.u = tri.b.u = tri.c.u = cluster_id;
-            tri.a.v = tri.b.v = tri.c.v = result_data.patches.size();
+            tri.a.u = tri.b.u = tri.c.u = static_cast<float>(cluster_id);
+            tri.a.v = tri.b.v = tri.c.v = static_cast<float>(result_data.patches.size());
             tri.a.w = tri.b.w = tri.c.w = 0;
             clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
             ++idx;

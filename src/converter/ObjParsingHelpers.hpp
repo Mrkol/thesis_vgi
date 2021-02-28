@@ -41,7 +41,7 @@ bool to_number(std::string_view view, T& result)
     {
         char* end;
         // This is potentially dangerous. Why does linux not have from_chars for floats yet???!!!
-        result = std::strtod(view.data(), &end);
+        result = static_cast<T>(std::strtod(view.data(), &end));
 
         return std::isfinite(result) && end != view.data();
     }

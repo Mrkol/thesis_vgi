@@ -29,9 +29,9 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
     {
         std::ifstream in{obj_file};
 
-        std::ofstream vert_file{vert_filename};
-        std::ofstream norm_file{norm_filename};
-        std::ofstream uv_file{uv_filename};
+        std::ofstream vert_file{vert_filename, std::ios_base::binary};
+        std::ofstream norm_file{norm_filename, std::ios_base::binary};
+        std::ofstream uv_file{uv_filename, std::ios_base::binary};
 
         std::string line;
         while (std::getline(in, line))
@@ -80,9 +80,9 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
 
     {
         // TODO: Replace with mmap
-        std::ifstream vert_file{vert_filename};
-        std::ifstream norm_file{norm_filename};
-        std::ifstream uv_file{uv_filename};
+        std::ifstream vert_file{vert_filename, std::ios_base::binary};
+        std::ifstream norm_file{norm_filename, std::ios_base::binary};
+        std::ifstream uv_file{uv_filename, std::ios_base::binary};
 
         auto LookupInFile =
             [](std::ifstream& stream, size_t index)
@@ -103,11 +103,11 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
                 return ThickVertex{x, y, z, nx, ny, nz, u, v, w};
             };
 
-        std::ofstream out{output_file};
+        std::ofstream out{output_file, std::ios_base::binary};
 
         out.write(reinterpret_cast<char*>(&dims), sizeof(dims));
 
-        std::ifstream in{obj_file};
+        std::ifstream in{obj_file, std::ios_base::binary};
 
         std::string line;
         while (std::getline(in, line))

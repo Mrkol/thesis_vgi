@@ -19,17 +19,17 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
         throw std::invalid_argument("Specified files and/or directories are not valid.");
 	}
 
-	std::ifstream in{input_file};
+	std::ifstream in{input_file, std::ios_base::binary};
 
 
-	auto size = std::filesystem::file_size(input_file);
+	auto size = file_size(input_file);
 
 	Dimensions dims;
 	in.read(reinterpret_cast<char*>(&dims), sizeof(dims));
 
 	// Dumb heuristics. 1MB is the limit for 1 in-core merge for now
 	// TODO: improve
-	auto part_count = std::ceil(std::cbrt(std::max(size / (1024 * 1024), 1ul)));
+	auto part_count = std::ceil(std::cbrt(std::max(size / (1024 * 1024), 1ull)));
 	auto grid_size = MeanDimension(dims) / part_count;
 
 	using BucketKey = std::tuple<int, int, int>;
@@ -48,10 +48,8 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
 			return streams.emplace(std::tuple{x, y, z},
 				std::ofstream{output_directory / (std::to_string(x) + ","
 				+ std::to_string(y) + ","
-				+ std::to_string(z))}).first->second;
+				+ std::to_string(z)), std::ios_base::binary}).first->second;
 		};
-
-
 
 	ThickTriangle current;
 	while (in.read(reinterpret_cast<char*>(&current), sizeof(current)))

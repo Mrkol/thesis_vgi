@@ -12,7 +12,7 @@ public:
     void wait_all_returned();
 
 private:
-    std::size_t borrowed;
+    std::size_t borrowed{};
     std::mutex mtx;
     std::condition_variable all_returned;
 };
