@@ -2,27 +2,40 @@
 
 #include <unordered_map>
 #include <vector>
-#include <Eigen/Dense>
 #include <unordered_set>
+#include <function2/function2.hpp>
 
 #include "DataTypes.hpp"
 
+struct ClusteringMetricConfig
+{
+    FloatingNumber planarity_weight = 1;
+    FloatingNumber orientation_weight = 0;
+    FloatingNumber compactness_weight = 1;
+};
+
+struct ClusteringConfig
+{
+    ClusteringMetricConfig metric_config;
+    fu2::unique_function<bool(FloatingNumber /*error*/,
+        std::size_t /*patch_count*/, std::size_t /*memory*/)> stopping_criterion;
+};
 
 // TODO: Allocators for speed
 struct Patch
 {
-    Eigen::Matrix4f planarity_quadric;
-    Eigen::Matrix4f orientation_quadric;
+    Matrix4 planarity_quadric;
+    Matrix4 orientation_quadric;
 
-    float area{};
-    float perimeter{};
+    FloatingNumber area{};
+    FloatingNumber perimeter{};
     std::size_t vertex_count{};
 
     constexpr static std::size_t NONE = std::numeric_limits<std::size_t>::max();
     struct BoundaryEdge
     {
         std::size_t patch_idx;
-        float length;
+        FloatingNumber length;
         HashableCoords starting_vertex;
     };
 
@@ -47,18 +60,15 @@ struct ClusteringData
 
 void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t>& mapping);
 
-constexpr float planarity_weight = 1;
-constexpr float orientation_weight = 0;
-constexpr float compactness_weight = 2;
-
 struct IntersectionData
 {
-    float common_perimeter{0};
+    FloatingNumber common_perimeter{0};
     std::size_t common_vertex_count{1};
 };
 
-float after_merge_error(const Patch& first, const Patch& second, const IntersectionData& data);
+FloatingNumber after_merge_error(const Patch& first, const Patch& second,
+    const IntersectionData& data, ClusteringMetricConfig config);
 
-ClusteringData cluster(ClusteringData data, const std::function<bool(float, std::size_t, std::size_t)>& stopping_criterion);
+ClusteringData cluster(ClusteringData data, ClusteringConfig config);
 
 void check_consistency(const ClusteringData& data);

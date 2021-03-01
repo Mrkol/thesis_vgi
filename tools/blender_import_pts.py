@@ -18,15 +18,18 @@ def read_pts(context, filepath):
         vertices = []
         uvs = []
         triangles = []
-        data = f.read(9 * 3 * 4)
+        fp_size = struct.unpack('Q', f.read(8))[0]
+        data = f.read(9 * 3 * fp_size)
         while data:
-            floats = [struct.unpack('fff', data[12*i:12*(i+1)]) for i in range(9)]
+            # long double not supported
+            floats = [struct.unpack('fff' if fp_size == 4 else 'ddd',
+                                    data[3*fp_size*i:3*fp_size*(i+1)]) for i in range(9)]
             x = len(vertices)
             triangles.append((x, x + 1, x + 2))
             vertices += [floats[3*i] for i in range(3)]
-            uvs += [floats[2 + 3*i] for i in  range(3)]
+            uvs += [floats[2 + 3*i] for i in range(3)]
 
-            data = f.read(9 * 3 * 4)
+            data = f.read(9 * 3 * fp_size)
 
         patch_count = int(uvs[0][1])
 

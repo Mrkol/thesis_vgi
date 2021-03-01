@@ -28,7 +28,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
     }
 
     // Reconstruct cross-data adjacency information
-    SurfaceHashTable<float> potential_common_edges;
+    SurfaceHashTable<FloatingNumber> potential_common_edges;
     BorderGraphVertices potential_border_graph_vertices;
 
     for (std::size_t current_idx = 0; const auto& data : datas)
@@ -110,16 +110,22 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
     return merged;
 }
 
-ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results)
+ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results,
+    ClusteringMetricConfig metric_error, FloatingNumber max_error)
 {
     auto data = merge_clustering_data(std::move(incore_results));
 
-    auto stopping_criterion =
-        [](float error, std::size_t /*patch_count*/, std::size_t /*memory*/)
+    ClusteringConfig config
+    {
+        metric_error,
+        [max_error]
+        (FloatingNumber error, std::size_t /*patch_count*/, std::size_t /*memory*/)
         {
             // TODO: Better criterion
-            return error < 100;
-        };
+            return error < max_error;
+        }
+    };
 
-    return cluster(std::move(data), stopping_criterion);
+
+    return cluster(std::move(data), std::move(config));
 }

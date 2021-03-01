@@ -8,13 +8,17 @@
 #include "TupleHash.hpp"
 #include "SymmetricPair.hpp"
 
-using HashableCoords = std::tuple<float, float, float>;
+
+using FloatingNumber = double;
+
+using HashableCoords = std::tuple<FloatingNumber, FloatingNumber, FloatingNumber>;
+static_assert(sizeof(HashableCoords) == sizeof(FloatingNumber)*3);
 
 using SymmetricEdge = SymmetricPair<HashableCoords>;
 
-inline float length(const SymmetricEdge& edge)
+inline FloatingNumber length(const SymmetricEdge& edge)
 {
-	auto sqr = [](float x) { return x*x; };
+	auto sqr = [](FloatingNumber x) { return x*x; };
 	return std::sqrt(sqr(std::get<0>(edge.first) - std::get<0>(edge.second))
 		+ sqr(std::get<1>(edge.first) - std::get<1>(edge.second))
 		+ sqr(std::get<2>(edge.first) - std::get<2>(edge.second)));
@@ -22,17 +26,22 @@ inline float length(const SymmetricEdge& edge)
 
 struct ThickVertex
 {
-	float x {}, y {}, z {};
-	float nx{}, ny{}, nz{};
-	float u {}, v {}, w {};
+    FloatingNumber x {}, y {}, z {};
+    FloatingNumber nx{}, ny{}, nz{};
+    FloatingNumber u {}, v {}, w {};
 };
 
-inline Eigen::Vector4f projective_position(const ThickVertex& v)
+using Vector4 = Eigen::Matrix<FloatingNumber, 4, 1>;
+using Matrix4 = Eigen::Matrix<FloatingNumber, 4, 4>;
+using Vector3 = Eigen::Matrix<FloatingNumber, 3, 1>;
+using Matrix3 = Eigen::Matrix<FloatingNumber, 3, 3>;
+
+inline Vector4 projective_position(const ThickVertex& v)
 {
 	return {v.x, v.y, v.z, 1};
 }
 
-inline Eigen::Vector4f projective_normal(const ThickVertex& v)
+inline Vector4 projective_normal(const ThickVertex& v)
 {
 	return {v.x, v.y, v.z, 0};
 }
@@ -49,7 +58,7 @@ struct ThickTriangle
 	ThickVertex c;
 };
 
-static_assert(sizeof(ThickTriangle) == 9*4*3);
+static_assert(sizeof(ThickTriangle) == sizeof(FloatingNumber)*9*3);
 
 inline std::array<HashableCoords, 3> triangle_verts(const ThickTriangle& tri)
 {
@@ -65,12 +74,12 @@ inline std::array<SymmetricEdge, 3> triangle_edges(const ThickTriangle& tri)
 
 struct Dimensions
 {
-	float min_x{}, max_x{};
-	float min_y{}, max_y{};
-	float min_z{}, max_z{};
+	FloatingNumber min_x{}, max_x{};
+    FloatingNumber min_y{}, max_y{};
+    FloatingNumber min_z{}, max_z{};
 };
 
-inline float MeanDimension(Dimensions d)
+inline FloatingNumber MeanDimension(Dimensions d)
 {
 	return (d.max_x + d.max_y + d.max_z - d.min_x - d.min_y - d.min_z) / 3;
 }

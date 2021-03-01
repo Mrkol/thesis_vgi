@@ -3,7 +3,6 @@
 #include <map>
 #include <set>
 #include <numbers>
-#include <iostream>
 
 #include "DisjointSetUnion.hpp"
 #include "DebugException.hpp"
@@ -40,74 +39,75 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
     }
 }
 
-Eigen::Vector4f least_squares_plane(const Eigen::Matrix4f &planarity_quadric)
+Vector4 least_squares_plane(const Matrix4& planarity_quadric)
 {
-    Eigen::Matrix3f A = planarity_quadric.block<3, 3>(0, 0);
-    Eigen::Vector3f b = planarity_quadric.block<3, 1>(0, 3);
-    float c = planarity_quadric(3, 3);
-    Eigen::Matrix3f Z = A - b*b.transpose()/c;
+    Matrix3 A = planarity_quadric.block<3, 3>(0, 0);
+    Vector3 b = planarity_quadric.block<3, 1>(0, 3);
+    FloatingNumber c = planarity_quadric(3, 3);
+    Matrix3 Z = A - b*b.transpose()/c;
 
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver;
+    Eigen::SelfAdjointEigenSolver<Matrix3> solver;
     solver.compute(Z);
 
-    Eigen::Vector3f least_squares_plane_normal = solver.eigenvectors().col(0);
+    Vector3 least_squares_plane_normal = solver.eigenvectors().col(0);
 
-    float least_squares_plane_offset = -least_squares_plane_normal.dot(b)/c;
+    FloatingNumber least_squares_plane_offset = -least_squares_plane_normal.dot(b)/c;
 
-    Eigen::Vector4f result;
+    Vector4 result;
     result.block<3, 1>(0, 0) = least_squares_plane_normal;
     result(3, 0) = least_squares_plane_offset;
     return result;
 }
 
-float planarity_error(const Eigen::Matrix4f& planarity_quadric, std::size_t vertex_count, const Eigen::Vector4f& plane)
+FloatingNumber planarity_error(const Matrix4& planarity_quadric, std::size_t vertex_count, const Vector4& plane)
 {
     return (plane.transpose()*planarity_quadric*plane).value() / vertex_count;
 }
 
-float orientation_error(const Eigen::Matrix4f& orientation_quadric, float area, const Eigen::Vector4f& plane)
+FloatingNumber orientation_error(const Matrix4& orientation_quadric, FloatingNumber area, const Vector4& plane)
 {
-    Eigen::Vector4f normal = plane;
+    Vector4 normal = plane;
     normal(3, 0) = 1;
     return (normal.transpose()*orientation_quadric*normal).value() / area;
 }
 
-float irregularity(float perimeter, float area)
+FloatingNumber irregularity(FloatingNumber perimeter, FloatingNumber area)
 {
-    return perimeter*perimeter / (4*std::numbers::pi_v<float>*area);
+    return perimeter*perimeter / (4*std::numbers::pi_v<FloatingNumber>*area);
 }
 
-float shape_error(float gamma, float gamma1, float gamma2)
+FloatingNumber shape_error(FloatingNumber gamma, FloatingNumber gamma1, FloatingNumber gamma2)
 {
     return (gamma - std::max(gamma1, gamma2))/gamma;
 }
 
-float after_merge_error(const Patch& first, const Patch& second, const IntersectionData& data)
+FloatingNumber after_merge_error(const Patch& first, const Patch& second, const IntersectionData& data,
+    ClusteringMetricConfig config)
 {
-    Eigen::Matrix4f plan_quad = first.planarity_quadric
+    Matrix4 plan_quad = first.planarity_quadric
                                 + second.planarity_quadric;
-    Eigen::Matrix4f orient_quad = first.orientation_quadric
+    Matrix4 orient_quad = first.orientation_quadric
                                   + second.orientation_quadric;
 
     auto plane = least_squares_plane(plan_quad);
 
-    float perimeter = first.perimeter + second.perimeter - 2*data.common_perimeter;
-    float area = first.area + second.area;
+    FloatingNumber perimeter = first.perimeter + second.perimeter - 2*data.common_perimeter;
+    FloatingNumber area = first.area + second.area;
     std::size_t vertex_count = first.vertex_count + second.vertex_count - data.common_vertex_count;
 
     auto gamma1 = irregularity(first.perimeter, first.area);
     auto gamma2 = irregularity(second.perimeter, second.area);
 
-    float gamma = irregularity(perimeter, area);
+    FloatingNumber gamma = irregularity(perimeter, area);
 
 
-    float pe = planarity_error(plan_quad, vertex_count, plane);
-    float oe = orientation_error(orient_quad, area, plane);
-    float se = shape_error(gamma, gamma1, gamma2);
+    FloatingNumber pe = planarity_error(plan_quad, vertex_count, plane);
+    FloatingNumber oe = orientation_error(orient_quad, area, plane);
+    FloatingNumber se = shape_error(gamma, gamma1, gamma2);
 
-    return planarity_weight * pe
-           + orientation_weight * oe
-           + compactness_weight * se;
+    return config.planarity_weight * pe
+           + config.orientation_weight * oe
+           + config.compactness_weight * se;
 }
 
 bool merge_preserve_topological_invariants(std::size_t first, std::size_t second,
@@ -191,7 +191,7 @@ void rotate_boundary(std::vector<Patch::BoundaryEdge>& merged_boundary)
     }
 }
 
-ClusteringData cluster(ClusteringData data, const std::function<bool(float, std::size_t, std::size_t)>& stopping_criterion)
+ClusteringData cluster(ClusteringData data, ClusteringConfig config)
 {
     auto& patches = data.patches;
     auto& border_graph_vertices = data.border_graph_vertices;
@@ -199,12 +199,12 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
     DisjointSetUnion dsu{patches.size()};
 
     // TODO: allocator or remove rb trees ;(
-    std::multimap<float, SymmetricPair<std::size_t>> queue;
+    std::multimap<FloatingNumber, SymmetricPair<std::size_t>> queue;
     std::unordered_map<SymmetricPair<std::size_t>, decltype(queue)::const_iterator> position_in_queue;
     position_in_queue.reserve(3*patches.size());
 
     auto enqueue_neighbors =
-        [&data, &queue, &position_in_queue]
+        [&data, &queue, &position_in_queue, metric_config = config.metric_config]
         (std::size_t idx, const std::function<bool(std::size_t)>& filter)
         {
             std::unordered_map<std::size_t, IntersectionData> neighbors;
@@ -212,14 +212,15 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
             {
                 if (neighbor != Patch::NONE && filter(neighbor))
                 {
-                    neighbors[neighbor].common_vertex_count += length;
-                    neighbors[neighbor].common_perimeter += 1;
+                    neighbors[neighbor].common_perimeter += length;
+                    neighbors[neighbor].common_vertex_count += 1;
                 }
             }
 
             for (auto[neighbor, inter_data] : neighbors)
             {
-                auto total_error = after_merge_error(data.patches[idx], data.patches[neighbor], inter_data);
+                auto total_error = after_merge_error(data.patches[idx],
+                    data.patches[neighbor], inter_data, metric_config);
                 SymmetricPair<std::size_t> our_pair{idx, neighbor};
 
                 position_in_queue.emplace(our_pair, queue.emplace(total_error, our_pair));
@@ -249,7 +250,7 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
     };
 
     std::size_t current_patch_count = patches.size();
-    while (!queue.empty() && stopping_criterion(queue.begin()->first, current_patch_count, total_patches_size))
+    while (!queue.empty() && config.stopping_criterion(queue.begin()->first, current_patch_count, total_patches_size))
     {
 #ifdef CLUSTERING_CONSISTENCY_CHECKS
         check_consistency(data);
@@ -301,7 +302,7 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
                         throw std::logic_error("Trying to merge non-neighboring patches!");
                     }
 
-                    float common_perimeter = 0;
+                    FloatingNumber common_perimeter = 0;
                     for (auto it = begin; it != end; ++it)
                     {
                         common_perimeter += it->length;
@@ -461,11 +462,11 @@ ClusteringData cluster(ClusteringData data, const std::function<bool(float, std:
 void check_consistency(const ClusteringData& data)
 {
     BorderGraphVertices vert_checker;
-    SurfaceHashTable<float> edge_checker;
+    SurfaceHashTable<FloatingNumber> edge_checker;
     for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
     {
         const auto& patch = data.patches[idx];
-        float perimeter = 0;
+        FloatingNumber perimeter = 0;
         for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
         {
             vert_checker[it->starting_vertex].insert(idx);

@@ -54,7 +54,7 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
 
             if (target != nullptr)
             {
-                auto opt = try_get_triple<float>(rest);
+                auto opt = try_get_triple<FloatingNumber>(rest);
                 if (!opt.has_value())
                 {
                     throw std::domain_error("Failed to parse v/vn/vt tag!");
@@ -71,8 +71,8 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
                     dims.max_z = std::max(dims.max_z, z);
                 }
 
-                static_assert(sizeof(opt.value()) == 12);
-                target->write(reinterpret_cast<char*>(&opt.value()), 12);
+                static_assert(sizeof(opt.value()) == sizeof(FloatingNumber)*3);
+                target->write(reinterpret_cast<char*>(&opt.value()), sizeof(opt.value()));
             }
         }
     }
@@ -87,10 +87,9 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
         auto LookupInFile =
             [](std::ifstream& stream, size_t index)
             {
-                stream.seekg(12 * index);
-                std::tuple<float, float, float> result;
-                static_assert(sizeof(result) == 12);
-                stream.read(reinterpret_cast<char*>(&result), 12);
+                stream.seekg(sizeof(HashableCoords) * index);
+                HashableCoords result;
+                stream.read(reinterpret_cast<char*>(&result), sizeof(HashableCoords));
                 return result;
             };
 
@@ -141,9 +140,7 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
 
             ThickTriangle all_verts{v1, v2, v3};
 
-            static_assert(sizeof(all_verts) == 4*9*3);
-
-            out.write(reinterpret_cast<char*>(&all_verts), 4*9*3);
+            out.write(reinterpret_cast<char*>(&all_verts), sizeof(FloatingNumber)*9*3);
         }
     }
 }
