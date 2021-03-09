@@ -37,10 +37,11 @@ struct Patch
         std::size_t patch_idx;
         FloatingNumber length;
         HashableCoords starting_vertex;
+        bool starting_vertex_adjacent_to_none{false};
     };
 
     std::vector<BoundaryEdge> boundary;
-    bool has_adjacent_nones{};
+    bool has_vertices_adjacent_to_none{false};
 
     [[nodiscard]] inline std::size_t total_size() const
     {
@@ -58,6 +59,7 @@ struct ClusteringData
     std::vector<std::size_t> accumulated_mapping;
 };
 
+void rotate_boundary(std::vector<Patch::BoundaryEdge>& merged_boundary);
 void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t>& mapping);
 
 struct IntersectionData
@@ -72,3 +74,4 @@ FloatingNumber after_merge_error(const Patch& first, const Patch& second,
 ClusteringData cluster(ClusteringData data, ClusteringConfig config);
 
 void check_consistency(const ClusteringData& data);
+void check_topological_invariants(const ClusteringData& data);

@@ -50,13 +50,17 @@ ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& trian
             {table.find_not(e2, idx), length(e2), v2},
             {table.find_not(e3, idx), length(e3), v3}};
 
-        patch.has_adjacent_nones = patch.boundary[0].patch_idx == Patch::NONE
-                                   || patch.boundary[1].patch_idx == Patch::NONE
-                                   || patch.boundary[2].patch_idx == Patch::NONE;
-
         result.border_graph_vertices[v1].insert(idx);
         result.border_graph_vertices[v2].insert(idx);
         result.border_graph_vertices[v3].insert(idx);
+
+        for (const auto& edge : patch.boundary)
+        {
+            if (edge.patch_idx == Patch::NONE)
+            {
+                result.border_graph_vertices[edge.starting_vertex].insert(Patch::NONE);
+            }
+        }
 
         auto make_planarity_quadric =
             [](const ThickVertex& v) -> Matrix4
@@ -77,6 +81,30 @@ ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& trian
             patch.orientation_quadric = tri_normal * tri_normal.transpose() * patch.area;
         }
     }
+
+    for (auto& patch : result.patches)
+    {
+        for (auto& edge : patch.boundary)
+        {
+            if (result.border_graph_vertices[edge.starting_vertex].contains(Patch::NONE))
+            {
+                patch.has_vertices_adjacent_to_none = true;
+                edge.starting_vertex_adjacent_to_none = true;
+            }
+        }
+    }
+
+    // Remove "pointy" triangles
+    //       v those things have 2 neighbors
+    // _____/\______/\___
+    // there's nothing we can do about em.
+    // after clusterization, a cluster might only have 1 neighboring cluster except for NONE,
+    // therefore it's a degenerate 2-gon. We can't deal with those nicely and will have to do some trickery
+    // to quadrangulate em.
+    // TODO: think about alternate solution: enforce neighbor count >=3 constraint on clusters
+
+    std::erase_if(result.border_graph_vertices,
+        [](const auto& pair) { return pair.second.size() < 3; });
 
     result.accumulated_mapping.resize(triangles.size());
     std::iota(result.accumulated_mapping.begin(), result.accumulated_mapping.end(), 0);

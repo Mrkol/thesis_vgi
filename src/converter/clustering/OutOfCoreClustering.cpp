@@ -12,6 +12,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
     for (const auto& data : datas)
     {
         check_consistency(data);
+        check_topological_invariants(data);
     }
 #endif
     // Reindex separate datas to a common indexing
@@ -29,13 +30,12 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
 
     // Reconstruct cross-data adjacency information
     SurfaceHashTable<FloatingNumber> potential_common_edges;
-    BorderGraphVertices potential_border_graph_vertices;
 
     for (std::size_t current_idx = 0; const auto& data : datas)
     {
         for (auto& patch : data.patches)
         {
-            if (patch.has_adjacent_nones)
+            if (patch.has_vertices_adjacent_to_none)
             {
                 for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
                 {
@@ -43,8 +43,6 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
                     if (it->patch_idx == Patch::NONE)
                     {
                         potential_common_edges.add({it->starting_vertex, next->starting_vertex}, current_idx);
-                        potential_border_graph_vertices[it->starting_vertex].insert(current_idx);
-                        potential_border_graph_vertices[next->starting_vertex].insert(current_idx);
                     }
                 }
             }
@@ -60,7 +58,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
         total_triangle_count += data.accumulated_mapping.size();
         for (auto& patch : data.patches)
         {
-            if (patch.has_adjacent_nones)
+            if (patch.has_vertices_adjacent_to_none)
             {
                 for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
                 {
@@ -73,6 +71,8 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
                         it->patch_idx = idx;
                     }
                 }
+
+                rotate_boundary(patch.boundary);
             }
             ++current_idx;
         }
@@ -95,16 +95,67 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
     datas = {};
 
     // Reconstruct cross-data boundary graph vertices
-    for (auto&[point, set] : potential_border_graph_vertices)
+    BorderGraphVertices cross_data_vertices;
+    for (std::size_t idx = 0; const auto& patch : merged.patches)
+    {
+        if (patch.has_vertices_adjacent_to_none)
+        {
+            for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
+            {
+                if (it->starting_vertex_adjacent_to_none)
+                {
+                    cross_data_vertices[it->starting_vertex].insert(idx);
+                }
+
+                auto next = std::next(it) == patch.boundary.end() ? patch.boundary.begin() : std::next(it);
+                if (it->patch_idx == Patch::NONE)
+                {
+                    cross_data_vertices[it->starting_vertex].insert(Patch::NONE);
+                    cross_data_vertices[next->starting_vertex].insert(Patch::NONE);
+                }
+            }
+        }
+        ++idx;
+    }
+
+    for (auto&[point, set] : cross_data_vertices)
     {
         if (set.size() >= 3)
         {
-            merged.border_graph_vertices[point].insert(set.begin(), set.end());
+            merged.border_graph_vertices[point] = std::move(set);
         }
+    }
+
+    for (std::size_t idx = 0; auto& patch : merged.patches)
+    {
+        if (patch.has_vertices_adjacent_to_none)
+        {
+            patch.has_vertices_adjacent_to_none = false;
+            for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
+            {
+                auto prev = it == patch.boundary.begin() ? patch.boundary.end() : std::prev(it);
+
+                it->starting_vertex_adjacent_to_none = it->patch_idx == Patch::NONE || prev->patch_idx == Patch::NONE;
+
+                // for cases like
+                // this    \/
+                // _____________
+                // /\/\/\/\/\/\/
+                if (auto set_it = merged.border_graph_vertices.find(it->starting_vertex);
+                    set_it != merged.border_graph_vertices.end() && set_it->second.contains(Patch::NONE))
+                {
+                    it->starting_vertex_adjacent_to_none = true;
+                }
+
+                patch.has_vertices_adjacent_to_none |= it->starting_vertex_adjacent_to_none;
+            }
+        }
+        ++idx;
     }
 
 #ifdef CLUSTERING_CONSISTENCY_CHECKS
     check_consistency(merged);
+    check_topological_invariants(merged);
 #endif
 
     return merged;
@@ -126,6 +177,6 @@ ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results,
         }
     };
 
-
+//    return data;
     return cluster(std::move(data), std::move(config));
 }

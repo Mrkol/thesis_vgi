@@ -55,9 +55,9 @@ void gridify(std::filesystem::path input_file, std::filesystem::path output_dire
 	while (in.read(reinterpret_cast<char*>(&current), sizeof(current)))
 	{
 		auto& stream = stream_for_tri(
-            int64_t(current.a.x / grid_size),
-            int64_t(current.a.y / grid_size),
-            int64_t(current.a.z / grid_size));
+            int64_t((current.a.x + current.b.x + current.c.x) / 3 / grid_size),
+            int64_t((current.a.y + current.b.y + current.c.y) / 3 / grid_size),
+            int64_t((current.a.z + current.b.z + current.c.z) / 3 / grid_size));
 
 		stream.write(reinterpret_cast<char*>(&current), sizeof(current));
 	}

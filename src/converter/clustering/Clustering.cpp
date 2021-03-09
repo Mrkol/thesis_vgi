@@ -28,7 +28,14 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
         updated_set.reserve(set.size());
         for (auto idx : set)
         {
-            updated_set.insert(mapping[idx]);
+            if (idx != Patch::NONE)
+            {
+                updated_set.insert(mapping[idx]);
+            }
+            else
+            {
+                updated_set.insert(Patch::NONE);
+            }
         }
         set = std::move(updated_set);
     }
@@ -141,7 +148,7 @@ bool merge_preserve_topological_invariants(std::size_t first, std::size_t second
             // having verts with high numbers of adjacent edges
             for (auto patch : patches->second)
             {
-                if (patch != first && patch != second && patch != Patch::NONE
+                if (patch != first && patch != second
                     && patch != it->patch_idx && patch != prev->patch_idx)
                 {
                     if (single_point_intersections.contains(patch))
@@ -159,12 +166,6 @@ bool merge_preserve_topological_invariants(std::size_t first, std::size_t second
     for (std::size_t i = 0; i < merged_boundary.size(); )
     {
         auto current = merged_boundary[i].patch_idx;
-
-        if (current == Patch::NONE)
-        {
-            ++i;
-            continue;
-        }
 
         if (already_met.contains(current) || single_point_intersections.contains(current))
         {
@@ -208,12 +209,12 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
         (std::size_t idx, const std::function<bool(std::size_t)>& filter)
         {
             std::unordered_map<std::size_t, IntersectionData> neighbors;
-            for (auto[neighbor, length, _] : data.patches[idx].boundary)
+            for (auto& edge : data.patches[idx].boundary)
             {
-                if (neighbor != Patch::NONE && filter(neighbor))
+                if (edge.patch_idx != Patch::NONE && filter(edge.patch_idx))
                 {
-                    neighbors[neighbor].common_perimeter += length;
-                    neighbors[neighbor].common_vertex_count += 1;
+                    neighbors[edge.patch_idx].common_perimeter += edge.length;
+                    neighbors[edge.patch_idx].common_vertex_count += 1;
                 }
             }
 
@@ -253,9 +254,14 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
     while (!queue.empty() && config.stopping_criterion(queue.begin()->first, current_patch_count, total_patches_size))
     {
 #ifdef CLUSTERING_CONSISTENCY_CHECKS
-        check_consistency(data);
+        if ((current_patch_count & 0b11111) == 0)
+        {
+            check_consistency(data);
+            check_topological_invariants(data);
+        }
 #endif
-        auto[first, second] = queue.begin()->second;
+        SymmetricPair<std::size_t> contraction = queue.begin()->second;
+        auto[first, second] = contraction;
 
         if (first != dsu.get(first) || second != dsu.get(second))
         {
@@ -379,7 +385,7 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
             patches[merged].perimeter += patches[other].perimeter;
             patches[merged].perimeter -= 2 * merge_intersection_data.common_perimeter;
 
-            patches[merged].has_adjacent_nones |= patches[other].has_adjacent_nones;
+            patches[merged].has_vertices_adjacent_to_none |= patches[other].has_vertices_adjacent_to_none;
 
             patches[merged].area += patches[other].area;
 
@@ -398,7 +404,7 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
 
 
         // Update border graph
-        for (auto edge : patches[merged].boundary)
+        for (const auto& edge : patches[merged].boundary)
         {
             auto it = border_graph_vertices.find(edge.starting_vertex);
             if (it == border_graph_vertices.end())
@@ -415,6 +421,17 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
                 border_graph_vertices.erase(it);
             }
         }
+
+#ifdef CLUSTERING_CONSISTENCY_CHECKS
+        for (const auto& edge : patches[merged].boundary)
+        {
+            // Neighbor patch update is required for other checks to work
+            if (edge.patch_idx != Patch::NONE)
+            {
+                update_boundary(patches[edge.patch_idx].boundary);
+            }
+        }
+#endif
 
         total_patches_size += patches[merged].total_size();
         patches[other] = {};
@@ -471,6 +488,13 @@ void check_consistency(const ClusteringData& data)
         {
             vert_checker[it->starting_vertex].insert(idx);
             auto next = std::next(it) == patch.boundary.end() ? patch.boundary.begin() : std::next(it);
+
+            if (it->patch_idx == Patch::NONE)
+            {
+                vert_checker[it->starting_vertex].insert(Patch::NONE);
+                vert_checker[next->starting_vertex].insert(Patch::NONE);
+            }
+
             SymmetricEdge edge{it->starting_vertex, next->starting_vertex};
             edge_checker.add(edge, idx);
             perimeter += length(edge);
@@ -490,7 +514,16 @@ void check_consistency(const ClusteringData& data)
             && (it == data.border_graph_vertices.end()
                 || it->second != set))
         {
-            throw std::logic_error("Clustering data is inconsistent!");
+            throw std::logic_error("Clustering data is inconsistent! Border graph vertices are missing!");
+        }
+    }
+
+    for (auto&[point, set] : data.border_graph_vertices)
+    {
+        auto it = vert_checker.find(point);
+        if (it == vert_checker.end() || it->second != set)
+        {
+            throw std::logic_error("Clustering data is inconsistent! Too many border graph vertices!");
         }
     }
 
@@ -518,5 +551,82 @@ void check_consistency(const ClusteringData& data)
 
         check(pair.first, pair.second);
         check(pair.second, pair.first);
+    }
+}
+
+void check_topological_invariants(const ClusteringData& data)
+{
+    for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
+    {
+        const auto& boundary = data.patches[idx].boundary;
+
+        // Check whether we look like a disc
+        {
+            std::unordered_set<HashableCoords> unique_coords;
+            for (auto& edge : boundary)
+            {
+                unique_coords.insert(edge.starting_vertex);
+            }
+            if (unique_coords.size() != boundary.size())
+            {
+                throw std::logic_error("Patch " + std::to_string(idx) + " has self-intersecting boundary");
+            }
+        }
+
+
+        // check that intersections are segments
+
+        std::unordered_set<std::size_t> single_point_intersections;
+        for (auto it = boundary.begin(); it != boundary.end(); ++it)
+        {
+            auto prev = it == boundary.begin() ? std::prev(boundary.end()) : std::prev(it);
+
+            auto patches = data.border_graph_vertices.find(it->starting_vertex);
+            if (patches != data.border_graph_vertices.end())
+            {
+                // Approximately constant time due to typical models not
+                // having verts with high numbers of adjacent edges
+                for (auto patch : patches->second)
+                {
+                    if (patch != Patch::NONE && patch != idx && patch != it->patch_idx && patch != prev->patch_idx)
+                    {
+                        if (single_point_intersections.contains(patch))
+                        {
+                            // Some other patch touches both first and second by a single point, therefore the merge is invalid.
+                           throw std::logic_error("Patches " + std::to_string(idx) + " and " + std::to_string(patch) +
+                               " intersect by two \"isolated\" points!");
+                        }
+                        single_point_intersections.insert(patch);
+                    }
+                }
+            }
+        }
+
+        std::unordered_set<std::size_t> already_met;
+        for (std::size_t i = 0; i < boundary.size(); )
+        {
+            auto current = boundary[i].patch_idx;
+
+            if (current == Patch::NONE)
+            {
+                ++i;
+                continue;
+            }
+
+            if (already_met.contains(current))
+            {
+                throw std::logic_error("Patches " + std::to_string(idx) + " and " + std::to_string(current) +
+                    " intersect by 2 segments!");
+            }
+
+            if (single_point_intersections.contains(current))
+            {
+                throw std::logic_error("Patches " + std::to_string(idx) + " and " + std::to_string(current) +
+                    " intersect by a segment and a point!");
+            }
+
+            while (i < boundary.size() && boundary[i].patch_idx == current) { ++i; }
+            already_met.insert(current);
+        }
     }
 }
