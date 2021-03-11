@@ -2,7 +2,7 @@
 
 #include <numeric>
 
-#include "SurfaceHashTable.hpp"
+#include "../SurfaceHashTable.hpp"
 #include "Clustering.hpp"
 
 
@@ -133,7 +133,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
             patch.has_vertices_adjacent_to_none = false;
             for (auto it = patch.boundary.begin(); it != patch.boundary.end(); ++it)
             {
-                auto prev = it == patch.boundary.begin() ? patch.boundary.end() : std::prev(it);
+                auto prev = std::prev(it == patch.boundary.begin() ? patch.boundary.end() : it);
 
                 it->starting_vertex_adjacent_to_none = it->patch_idx == Patch::NONE || prev->patch_idx == Patch::NONE;
 

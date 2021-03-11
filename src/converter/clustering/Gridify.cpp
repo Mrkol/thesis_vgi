@@ -1,7 +1,7 @@
 #include "Gridify.hpp"
 
-#include "DataTypes.hpp"
-#include "TupleHash.hpp"
+#include "../DataTypes.hpp"
+#include "../TupleHash.hpp"
 
 #include <fstream>
 #include <string>

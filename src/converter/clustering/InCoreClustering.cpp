@@ -6,8 +6,8 @@
 #include <numeric>
 #include <iostream>
 
-#include "SurfaceHashTable.hpp"
-#include "DataTypes.hpp"
+#include "../SurfaceHashTable.hpp"
+#include "../DataTypes.hpp"
 
 
 ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& triangles)

@@ -3,6 +3,7 @@
 #include <tuple>
 #include <cmath>
 #include <array>
+#include <numeric>
 #include <Eigen/Dense>
 
 #include "TupleHash.hpp"
@@ -35,6 +36,16 @@ using Vector4 = Eigen::Matrix<FloatingNumber, 4, 1>;
 using Matrix4 = Eigen::Matrix<FloatingNumber, 4, 4>;
 using Vector3 = Eigen::Matrix<FloatingNumber, 3, 1>;
 using Matrix3 = Eigen::Matrix<FloatingNumber, 3, 3>;
+
+inline ThickVertex midpoint(const ThickVertex& a, const ThickVertex& b)
+{
+    return
+    {
+        std::midpoint(a.x, b.x), std::midpoint(a.y, b.y), std::midpoint(a.z, b.z),
+        std::midpoint(a.nx, b.nx), std::midpoint(a.ny, b.ny), std::midpoint(a.nz, b.nz),
+        std::midpoint(a.u, b.u), std::midpoint(a.v, b.v), std::midpoint(a.w, b.w),
+    };
+}
 
 inline Vector4 projective_position(const ThickVertex& v)
 {

@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <function2/function2.hpp>
 
-#include "DataTypes.hpp"
+#include "../DataTypes.hpp"
 
 struct ClusteringMetricConfig
 {

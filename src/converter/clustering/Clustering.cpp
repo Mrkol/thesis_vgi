@@ -1,13 +1,26 @@
-#include "SurfaceHashTable.hpp"
+#include "../SurfaceHashTable.hpp"
 
 #include <map>
 #include <set>
 #include <numbers>
 
-#include "DisjointSetUnion.hpp"
-#include "DebugException.hpp"
+#include "../DisjointSetUnion.hpp"
+#include "../DebugException.hpp"
 #include "Clustering.hpp"
 
+
+void rotate_boundary(std::vector<Patch::BoundaryEdge>& boundary)
+{
+    // Fixup the boundary so that process_boundary and topinv check code is simpler
+    // TODO: this is not optimal, replace vector with a custom cyclic vector
+    if (boundary.front().patch_idx == boundary.back().patch_idx)
+    {
+        auto patch = boundary.front().patch_idx;
+        auto it = std::find_if(boundary.begin(), boundary.end(),
+                               [patch](const Patch::BoundaryEdge& e){ return e.patch_idx != patch; });
+        std::rotate(boundary.begin(), it, boundary.end());
+    }
+}
 
 void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t> &mapping)
 {
@@ -20,6 +33,7 @@ void reindex_clustering_data(ClusteringData& data, const std::vector<std::size_t
                 edge.patch_idx = mapping[edge.patch_idx];
             }
         }
+        rotate_boundary(patch.boundary);
     }
 
     for (auto&[point, set] : data.border_graph_vertices)
@@ -177,19 +191,6 @@ bool merge_preserve_topological_invariants(std::size_t first, std::size_t second
     }
 
     return true;
-}
-
-void rotate_boundary(std::vector<Patch::BoundaryEdge>& merged_boundary)
-{
-    // Fixup the boundary so that process_boundary and topinv check code is simpler
-    // TODO: this is not optimal, replace vector with a custom cyclic vector
-    if (merged_boundary.front().patch_idx == merged_boundary.back().patch_idx)
-    {
-        auto patch = merged_boundary.front().patch_idx;
-        auto it = std::find_if(merged_boundary.begin(), merged_boundary.end(),
-                               [patch](const Patch::BoundaryEdge& e){ return e.patch_idx != patch; });
-        std::rotate(merged_boundary.begin(), it, merged_boundary.end());
-    }
 }
 
 ClusteringData cluster(ClusteringData data, ClusteringConfig config)
