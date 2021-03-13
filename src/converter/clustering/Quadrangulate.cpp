@@ -105,46 +105,33 @@ public:
         return vertex_indices.size();
     }
 
-    void split_edge(std::size_t u, std::size_t v, HashableCoords m)
+    // Look at the picture where this thing is used
+    void split_edge(HashableCoords u, HashableCoords v, HashableCoords a, HashableCoords b, HashableCoords m)
     {
-        if (u > vertex_count() || v > vertex_count() || !lengths.contains({u, v}))
-        {
-            throw std::logic_error("Edge to be splitted not part of the graph!");
-        }
+        auto u_idx = index_of(u);
+        auto v_idx = index_of(v);
+        auto a_idx = index_of(a);
+        auto b_idx = index_of(b);
 
-        std::size_t idx = vertices.size();
-        vertex_indices[m] = idx;
+        std::size_t m_idx = vertices.size();
+        vertex_indices[m] = m_idx;
         vertices.push_back(m);
-        adjacency_list.emplace_back();
+        adjacency_list.push_back({a_idx, b_idx, u_idx, v_idx});
 
-        adjacency_list[u].erase(v);
-        adjacency_list[v].erase(u);
+        adjacency_list[u_idx].erase(v_idx);
+        adjacency_list[v_idx].erase(u_idx);
 
-        auto it1 = std::find_if(adjacency_list[u].begin(), adjacency_list[u].end(),
-            [this, v](std::size_t i) { return adjacency_list[v].contains(i); });
-        auto it2 = std::find_if(it1, adjacency_list[u].end(),
-                                [this, v](std::size_t i) { return adjacency_list[v].contains(i); });
+        adjacency_list[a_idx].insert(m_idx);
+        adjacency_list[b_idx].insert(m_idx);
+        adjacency_list[u_idx].insert(m_idx);
+        adjacency_list[v_idx].insert(m_idx);
 
-        if (it1 == adjacency_list[u].end() || it2 == adjacency_list[u].end())
-        {
-            throw std::logic_error("Trying to split an edge on the border! This shouldn't happen!");
-        }
+        lengths.erase(SymmetricPair<std::size_t>{u_idx, v_idx});
 
-        auto a = *it1;
-        auto b = *it2;
-
-        adjacency_list[a].insert(idx);
-        adjacency_list[b].insert(idx);
-        adjacency_list[u].insert(idx);
-        adjacency_list[v].insert(idx);
-
-        lengths.erase(SymmetricPair<std::size_t>{u, v});
-
-        lengths[SymmetricPair<std::size_t>{a, idx}] = length({vertices[a], m});
-        lengths[SymmetricPair<std::size_t>{v, idx}] = length({vertices[v], m});
-        lengths[SymmetricPair<std::size_t>{b, idx}] = length({vertices[b], m});
-        lengths[SymmetricPair<std::size_t>{u, idx}] = length({vertices[u], m});
-
+        lengths[SymmetricPair<std::size_t>{a_idx, m_idx}] = length({a, m});
+        lengths[SymmetricPair<std::size_t>{v_idx, m_idx}] = length({v, m});
+        lengths[SymmetricPair<std::size_t>{b_idx, m_idx}] = length({b, m});
+        lengths[SymmetricPair<std::size_t>{u_idx, m_idx}] = length({u, m});
     }
 
 private:
@@ -218,23 +205,26 @@ std::vector<std::size_t>::const_iterator median_point(const SurfaceGraph& graph,
         throw std::logic_error("Empty paths dont have median points!");
     }
 
-    if (path.size() == 1)
-    {
-        return path.begin();
-    }
-
-    std::vector<FloatingNumber> prefix_sums;
-    prefix_sums.reserve(path.size() + 1);
-    prefix_sums.push_back(0);
-
+    FloatingNumber total_length = 0;
     for (std::size_t i = 1; i < path.size(); ++i)
     {
-        prefix_sums.push_back(prefix_sums.back() + graph.get_length(path[i], path[i - 1]));
+        total_length += graph.get_length(path[i], path[i - 1]);
     }
 
-    return path.begin() + std::distance(
-        prefix_sums.begin(),
-        std::lower_bound(prefix_sums.begin(), prefix_sums.end(), prefix_sums.back() / 2));
+    auto it = path.begin();
+    FloatingNumber current = 0;
+    while (std::next(it) != path.end())
+    {
+        auto potential = current + graph.get_length(*it, *std::next(it));
+        if (std::abs(total_length / 2 - current) < std::abs(total_length / 2 - potential))
+        {
+            break;
+        }
+        current = potential;
+        ++it;
+    }
+
+    return it;
 }
 
 std::vector<std::size_t> find_center_recurse(const SurfaceGraph& graph, const std::vector<std::size_t>& corners)
@@ -264,50 +254,284 @@ std::vector<std::size_t> find_center_recurse(const SurfaceGraph& graph, const st
     return result;
 }
 
-std::size_t find_center(const SurfaceGraph& graph, const std::vector<std::size_t>& corners)
+using PolygonEdges = std::vector<std::vector<std::size_t>>;
+
+
+void center_finding_dfs(const SurfaceGraph& graph, std::unordered_set<std::size_t>& candidates,
+    std::size_t current, std::size_t depth = 0)
 {
-    std::vector<std::size_t> current = corners;
+    if (candidates.contains(current) || depth > 3)
+    {
+        return;
+    }
+
+    candidates.insert(current);
+
+    for (auto next : graph.adjacent_to(current))
+    {
+        center_finding_dfs(graph, candidates, next, depth + 1);
+    }
+}
+
+std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_edges)
+{
+    std::unordered_set<std::size_t> border;
+    for (auto& edge : polygon_edges)
+    {
+        std::copy(edge.begin(), edge.end(), std::inserter(border, border.begin()));
+    }
+
+
+    std::vector<std::size_t> current;
+    current.reserve(polygon_edges.size());
+    for (auto& edge : polygon_edges)
+    {
+        current.push_back(edge.front());
+    }
+
     while (current.size() > 2)
     {
         current = find_center_recurse(graph, current);
     }
 
-    std::size_t candidate = 0;
+    std::size_t naive_candidate = 0;
     if (current.size() == 2)
     {
         auto distances = dijkstra(graph, current[0]);
-        candidate = *median_point(graph, recontstruct_shortest_path(graph, distances, current[0], current[1]));
+        naive_candidate = *median_point(graph, recontstruct_shortest_path(graph, distances, current[0], current[1]));
     }
     else
     {
-        candidate = current[0];
+        naive_candidate = current[0];
     }
 
-    // TODO: DFS proper with max depth = 2-3
-    for (auto adjacent : graph.adjacent_to(candidate))
+
+    std::unordered_set<std::size_t> candidates;
+    center_finding_dfs(graph, candidates, naive_candidate);
+
+    static constexpr std::size_t NOT_FOUND = std::numeric_limits<std::size_t>::max();
+    std::size_t best = NOT_FOUND;
+    for (auto candidate : candidates)
     {
-        if (graph.adjacent_to(candidate).size() < graph.adjacent_to(adjacent).size())
+        if (!border.contains(candidate))
         {
-            candidate = adjacent;
+            if (best == NOT_FOUND || graph.adjacent_to(best).size() < graph.adjacent_to(candidate).size())
+            {
+                best = candidate;
+            }
         }
     }
 
-    return candidate;
+    if (best == NOT_FOUND)
+    {
+        throw std::logic_error("fml");
+    }
+
+    return best;
+}
+
+void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceHashTable<FloatingNumber>& dual_graph,
+    size_t u_idx, size_t v_idx)
+{
+    // TODO: Optimize this crap
+    auto u = graph.coords(u_idx);
+    auto v = graph.coords(v_idx);
+
+    /*       a                            a
+     *      /\                           /|\
+     *     /  \                         / | \
+     *    / f  \                       / f|f'\
+     * u /______\        =>         u /___|___\
+     *   \      / v                   \   |   / v
+     *    \  s /                       \s'|s /
+     *     \  /                         \ | /
+     *      \/                           \|/
+     *      b                             b
+     */
+
+    // f, s
+    auto[first_idx, second_idx] = dual_graph.find({u, v});
+
+    auto get_third =
+        [](ThickTriangle& triangle, SymmetricEdge e) -> ThickVertex&
+        {
+            if (SymmetricEdge{to_hashable_coords(triangle.a), to_hashable_coords(triangle.b)} == e)
+            { return triangle.c; }
+            if (SymmetricEdge{to_hashable_coords(triangle.b), to_hashable_coords(triangle.c)} == e)
+            { return triangle.a; }
+            if (SymmetricEdge{to_hashable_coords(triangle.c), to_hashable_coords(triangle.a)} == e)
+            { return triangle.b; }
+            throw std::logic_error("Edge didn't come from this triangle!");
+        };
+
+    auto a = to_hashable_coords(get_third(patch[first_idx], {u, v}));
+    auto b = to_hashable_coords(get_third(patch[second_idx], {u, v}));
+
+
+    // Split actual geometric data
+    ThickVertex m_thick;
+    size_t first_prime_idx = 0;
+    size_t second_prime_idx = 0;
+    {
+        m_thick = midpoint(get_third(patch[second_idx], {b, v}), get_third(patch[first_idx], {a, u}));
+
+        // Duplicate first and shift u -> m
+        first_prime_idx = patch.size();
+        patch.push_back(patch[first_idx]);
+        get_third(patch.back(), {a, v}) = m_thick;
+
+        // Duplicate second and shift v -> m
+        second_prime_idx = patch.size();
+        patch.push_back(patch[second_idx]);
+        get_third(patch.back(), {b, u}) = m_thick;
+
+        // For first, shift v -> m
+        get_third(patch[first_idx], {a, u}) = m_thick;
+
+        // for second, shift u -> m
+        get_third(patch[second_idx], {b, v}) = m_thick;
+    }
+
+    auto m = to_hashable_coords(m_thick);
+
+    // Split hash table data
+    // Don't try to read this. Look at the picture above.
+    {
+        dual_graph.remove_triangle(a, u, v);
+        dual_graph.remove_triangle(u, v, b);
+        dual_graph.add({a, v}, first_prime_idx);
+        dual_graph.add({v, b}, second_idx);
+        dual_graph.add({b, u}, second_prime_idx);
+        dual_graph.add({u, a}, first_idx);
+
+        dual_graph.add({a, m}, first_idx);
+        dual_graph.add({a, m}, first_prime_idx);
+        dual_graph.add({v, m}, first_prime_idx);
+        dual_graph.add({v, m}, second_idx);
+        dual_graph.add({b, m}, second_idx);
+        dual_graph.add({b, m}, second_prime_idx);
+        dual_graph.add({u, m}, second_prime_idx);
+        dual_graph.add({u, m}, first_idx);
+    }
+
+    // Split graph
+    graph.split_edge(u, v, a, b, m);
 }
 
 std::vector<std::vector<std::size_t>> build_midpoint_paths(
     std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceHashTable<FloatingNumber>& dual_graph,
-    size_t center, const std::vector<std::size_t>& midpoints)
+    size_t center, const PolygonEdges& polygon_edges)
 {
-    std::vector<std::vector<size_t>> result{midpoints.size()};
+    // This hardcoded epsilon might be a bad idea
+    static constexpr FloatingNumber NUMERICAL_STABILITY_EPS = 1e-6;
 
+    std::vector<PolygonEdges::value_type::const_iterator> midpoints;
+    midpoints.reserve(polygon_edges.size());
+    for (const auto& edge : polygon_edges)
     {
-        auto distances = dijkstra(graph, center, [](size_t) { return 1; },
-            [m = midpoints[0], &graph](size_t v) { return graph.get_distance(m, v); });
-        result[0] = recontstruct_shortest_path(graph, distances, center, midpoints[0]);
+        midpoints.push_back(median_point(graph, edge));
     }
 
-    for (size_t iteration = 1; iteration < result.size(); ++iteration)
+    std::vector<std::vector<size_t>> result{midpoints.size()};
+
+    // First two paths are a special case
+    {
+        std::vector<FloatingNumber> distances_to_boundary;
+        std::vector<std::size_t> total_border;
+
+        // If this patch has any "tentacles", we have to split em so that the first iteration is guaranteed to succeed
+        for (auto& edge : polygon_edges)
+        {
+            std::copy(std::next(edge.begin()), edge.end(), std::back_inserter(total_border));
+        }
+
+        for (std::size_t i = 0; i < total_border.size(); ++i)
+        {
+            for (std::size_t j = 0; j < total_border.size(); ++j)
+            {
+                auto next = i + 1 == total_border.size() ? 0 : i + 1;
+                auto prev = i == 0 ? total_border.size() - 1 : i - 1;
+                if (j == next || j == prev)
+                {
+                    // Dont count immediate neighbors
+                    continue;
+                }
+                if (graph.is_edge(total_border[i], total_border[j]))
+                {
+                    split_edge(patch, graph, dual_graph, total_border[i], total_border[j]);
+                }
+            }
+        }
+
+
+        // Needed to prohibit our paths from hitting the boundary
+        distances_to_boundary.resize(graph.vertex_count(), std::numeric_limits<FloatingNumber>::max());
+
+        // This is O(n sqrt(n)) :(
+        for (size_t i = 0; i < distances_to_boundary.size(); ++i)
+        {
+            auto& min = distances_to_boundary[i];
+            for (auto u : total_border)
+            {
+                min = std::min(min, graph.get_distance(i, u));
+            }
+        }
+
+        {
+            auto distances = dijkstra(graph, center,
+                                      [&distances_to_boundary](size_t i) { return distances_to_boundary[i] + NUMERICAL_STABILITY_EPS; },
+                                      [m = *midpoints[0], &graph](size_t v) { return graph.get_distance(m, v); });
+
+            result[0] = recontstruct_shortest_path(graph, distances, center, *midpoints[0]);
+        }
+
+
+
+        // Second path
+
+        std::size_t second_idx = 1 + (result.size() - 1) / 2;
+
+        for (auto v : total_border)
+        {
+            for (auto u_it = result[0].begin(); std::next(u_it) != result[0].end(); ++u_it)
+            {
+                if (v == result[0].back())
+                {
+                    continue;
+                }
+
+                if (graph.is_edge(*u_it, v))
+                {
+                    split_edge(patch, graph, dual_graph, *u_it, v);
+
+                    distances_to_boundary.push_back(std::numeric_limits<FloatingNumber>::max());
+                    for (auto i : total_border)
+                    {
+                        distances_to_boundary.back() = std::min(distances_to_boundary.back(),
+                            graph.get_distance(graph.vertex_count() - 1, i));
+                    }
+                }
+            }
+        }
+
+        std::vector<FloatingNumber> distances_to_bad_paths = distances_to_boundary;
+        for (std::size_t idx = 0; idx < distances_to_bad_paths.size(); ++idx)
+        {
+            for (auto u : result[0])
+            {
+                distances_to_bad_paths[idx] = std::min(distances_to_bad_paths[idx], graph.get_distance(idx, u));
+            }
+        }
+
+
+        auto distances = dijkstra(graph, center,
+            [&distances_to_bad_paths](size_t i) { return distances_to_bad_paths[i] + NUMERICAL_STABILITY_EPS; },
+            [m = *midpoints[second_idx], &graph](size_t v) { return graph.get_distance(m, v); });
+
+        result[second_idx] = recontstruct_shortest_path(graph, distances, center, *midpoints[second_idx]);
+    }
+
+    for (size_t iteration = 2; iteration < result.size(); ++iteration)
     {
         // Find largest unrpocessed segment of midpoints
         decltype(result)::iterator best_begin;
@@ -329,8 +553,55 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
         auto target_path = std::next(best_begin, std::distance(best_begin, best_end) / 2);
         auto next_path = best_end == result.end() ? result.begin() : best_end;
 
-
+        auto previous_midpoint = midpoints[std::distance(result.begin(), previous_path)];
         auto target_midpoint = midpoints[std::distance(result.begin(), target_path)];
+        auto next_midpoint = midpoints[std::distance(result.begin(), next_path)];
+
+
+        std::vector<std::size_t> left{previous_path->begin() + 1, previous_path->end() - 1};
+        std::vector<std::size_t> right{next_path->begin() + 1, next_path->end() - 1};
+        {
+            /*           .
+             *        __/|\
+             *      _/   | \
+             *     /    /   \_
+             *    /    |      \
+             *  a.     |       |
+             *       __|__     .b
+             *         c
+             */
+
+            // We need to find ac and bc to keep away from them
+
+            auto left_edge = polygon_edges.begin() + std::distance(result.begin(), previous_path);
+            auto our_edge = polygon_edges.begin() + std::distance(result.begin(), target_path);
+            auto right_edge = polygon_edges.begin() + std::distance(result.begin(), next_path);
+
+            std::copy(previous_midpoint, std::prev(left_edge->end()), std::back_inserter(left));
+            ++left_edge;
+            while (left_edge != our_edge)
+            {
+                std::copy(left_edge->begin(), std::prev(left_edge->end()), std::back_inserter(left));
+                ++left_edge;
+            }
+            std::copy(our_edge->begin(), target_midpoint, std::back_inserter(left));
+
+
+            std::copy(std::prev(std::make_reverse_iterator(next_midpoint)), std::prev(right_edge->rend()),
+                std::back_inserter(right));
+            if (right_edge == polygon_edges.begin())
+            {
+                right_edge = polygon_edges.end();
+            }
+            --right_edge;
+            while (right_edge != our_edge)
+            {
+                std::copy(right_edge->rbegin(), std::prev(right_edge->rend()), std::back_inserter(right));
+                --right_edge;
+            }
+            std::copy(right_edge->rbegin(), std::prev(std::make_reverse_iterator(target_midpoint)),
+                std::back_inserter(right));
+        }
 
         // find all pairs of edges that would prohibit us from finding a path and split em
 
@@ -343,153 +614,49 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
          * ...
          */
 
-        // On the first iteration, prev = next, so the picture above is impossible
-        if (iteration > 1)
+        // Each path has length O(sqrt(n)) so overall it's O(n)
+        for (auto u : left)
         {
-            std::vector<SymmetricPair<size_t>> edges;
-            // Each path has length O(sqrt(n)) so overall it's O(n)
-            for (size_t i = 1; i < previous_path->size(); ++i)
+            for (auto v : right)
             {
-                for (size_t j = 1; j < next_path->size(); ++j)
+                if (graph.is_edge(u, v))
                 {
-                    auto u = (*previous_path)[i];
-                    auto v = (*next_path)[j];
-                    if (graph.is_edge(u, v))
-                    {
-                        edges.push_back({u, v});
-                    }
+                    split_edge(patch, graph, dual_graph, u, v);
                 }
-            }
-
-
-            for (auto[u_idx, v_idx] : edges)
-            {
-                // TODO: Optimize this crap
-                auto u = graph.coords(u_idx);
-                auto v = graph.coords(v_idx);
-
-                /*       a                            a
-                 *      /\                           /|\
-                 *     /  \                         / | \
-                 *    / f  \                       / f|f'\
-                 * u /______\        =>         u /___|___\
-                 *   \      / v                   \   |   / v
-                 *    \  s /                       \s'|s /
-                 *     \  /                         \ | /
-                 *      \/                           \|/
-                 *      b                             b
-                 */
-
-                // f, s
-                auto[first_idx, second_idx] = dual_graph.find({u, v});
-
-                auto get_third =
-                    [](ThickTriangle& triangle, SymmetricEdge e) -> ThickVertex&
-                    {
-                        if (SymmetricEdge{to_hashable_coords(triangle.a), to_hashable_coords(triangle.b)} == e)
-                        { return triangle.c; }
-                        if (SymmetricEdge{to_hashable_coords(triangle.b), to_hashable_coords(triangle.c)} == e)
-                        { return triangle.a; }
-                        if (SymmetricEdge{to_hashable_coords(triangle.c), to_hashable_coords(triangle.a)} == e)
-                        { return triangle.b; }
-                        throw std::logic_error("Edge didn't come from this triangle!");
-                    };
-
-                auto a = to_hashable_coords(get_third(patch[first_idx], {u, v}));
-                auto b = to_hashable_coords(get_third(patch[second_idx], {u, v}));
-
-
-                // Split actual geometric data
-                ThickVertex m_thick;
-                size_t first_prime_idx = 0;
-                size_t second_prime_idx = 0;
-                {
-                    m_thick = midpoint(get_third(patch[second_idx], {b, v}), get_third(patch[first_idx], {a, u}));
-
-                    // Duplicate first and shift u -> m
-                    first_prime_idx = patch.size();
-                    patch.push_back(patch[first_idx]);
-                    get_third(patch.back(), {a, v}) = m_thick;
-
-                    // Duplicate second and shift v -> m
-                    second_prime_idx = patch.size();
-                    patch.push_back(patch[second_idx]);
-                    get_third(patch.back(), {b, u}) = m_thick;
-
-                    // For first, shift v -> m
-                    get_third(patch[first_idx], {a, u}) = m_thick;
-
-                    // for second, shift u -> m
-                    get_third(patch[second_idx], {b, v}) = m_thick;
-                }
-
-                auto m = to_hashable_coords(m_thick);
-
-                // Split hash table data
-                // Don't try to read this. Look at the picture above.
-                {
-                    dual_graph.remove_triangle(a, u, v);
-                    dual_graph.remove_triangle(u, v, b);
-                    dual_graph.add({a, v}, first_prime_idx);
-                    dual_graph.add({v, b}, second_idx);
-                    dual_graph.add({b, u}, second_prime_idx);
-                    dual_graph.add({u, a}, first_idx);
-
-                    dual_graph.add({a, m}, first_idx);
-                    dual_graph.add({a, m}, first_prime_idx);
-                    dual_graph.add({v, m}, first_prime_idx);
-                    dual_graph.add({v, m}, second_idx);
-                    dual_graph.add({b, m}, second_idx);
-                    dual_graph.add({b, m}, second_prime_idx);
-                    dual_graph.add({u, m}, second_prime_idx);
-                    dual_graph.add({u, m}, first_idx);
-                }
-
-                // Split graph
-                graph.split_edge(graph.index_of(u), graph.index_of(v), m);
             }
         }
 
 
         // build the path (which is now guaranteed to exist)
 
+
         std::vector<FloatingNumber> distances_to_bad_paths;
-        distances_to_bad_paths.resize(graph.vertex_count());
+        distances_to_bad_paths.resize(graph.vertex_count(), std::numeric_limits<FloatingNumber>::max());
         for (size_t i = 0; i < distances_to_bad_paths.size(); ++i)
         {
             auto& min = distances_to_bad_paths[i];
-            min = std::numeric_limits<FloatingNumber>::max();
-            for (auto u : *previous_path)
+            for (auto u : left)
             {
                 min = std::min(min, graph.get_distance(i, u));
             }
-            for (auto u : *next_path)
+            for (auto u : right)
             {
                 min = std::min(min, graph.get_distance(i, u));
             }
         }
 
         auto distances = dijkstra(graph, center,
-            [&distances_to_bad_paths](size_t u) { return distances_to_bad_paths[u]; },
-            [&graph, m = target_midpoint](size_t u) { return graph.get_distance(u, m); });
+            [&distances_to_bad_paths](size_t u) { return distances_to_bad_paths[u] + NUMERICAL_STABILITY_EPS; },
+            [&graph, m = *target_midpoint](size_t u) { return graph.get_distance(u, m); });
 
-        *target_path = recontstruct_shortest_path(graph, distances, center, target_midpoint);
+        *target_path = recontstruct_shortest_path(graph, distances, center, *target_midpoint);
     }
     return result;
 }
 
-struct PolygonInfo
-{
-    std::vector<std::size_t> corners;
-    std::vector<std::size_t> midpoints;
-    // vertices guaranteed to be on the "next" edge immediately after the corners
-    std::vector<std::size_t> corner_neighbors;
-};
-
-PolygonInfo find_polygon_info(const ClusteringData& data,
+PolygonEdges find_polygon_edges(const ClusteringData& data,
     const SurfaceGraph& graph, size_t patch_idx)
 {
-    std::vector<std::size_t> corners;
     std::vector<std::vector<std::size_t>> boundary_edges;
 
     const auto& boundary = data.patches[patch_idx].boundary;
@@ -506,16 +673,15 @@ PolygonInfo find_polygon_info(const ClusteringData& data,
             {
                 boundary_edges.back().push_back(vidx);
             }
-            corners.push_back(vidx);
             boundary_edges.emplace_back();
         }
         boundary_edges.back().push_back(vidx);
     }
 
-    boundary_edges.back().push_back(corners.front());
+    boundary_edges.back().push_back(boundary_edges.front().front());
 
 
-    while (corners.size() < 3)
+    while (boundary_edges.size() < 3)
     {
         // Bad case, we're a blob at the "edge" of the surface
 
@@ -524,29 +690,14 @@ PolygonInfo find_polygon_info(const ClusteringData& data,
 
         auto mid_it = median_point(graph, *to_split);
 
-        corners.insert(std::next(corners.begin(), std::distance(boundary_edges.begin(), to_split) + 1), *mid_it);
-
         auto new_edge = boundary_edges.emplace(std::next(to_split), mid_it, to_split->cend());
         to_split = std::prev(new_edge); // this was invalidated by the insert
 
         to_split->resize(std::distance(to_split->cbegin(), mid_it) + 1);
     }
 
-    std::vector<std::size_t> midpoints;
-    midpoints.reserve(boundary_edges.size());
-    for (const auto& edge : boundary_edges)
-    {
-        midpoints.push_back(*median_point(graph, edge));
-    }
 
-    std::vector<std::size_t> corner_neighbors;
-    corner_neighbors.reserve(boundary_edges.size());
-    for (const auto& edge : boundary_edges)
-    {
-        corner_neighbors.push_back(edge[1]);
-    }
-
-    return {std::move(corners), std::move(midpoints), std::move(corner_neighbors)};
+    return boundary_edges;
 }
 
 constexpr std::size_t COLOR_NONE = std::numeric_limits<std::size_t>::max();
@@ -603,7 +754,6 @@ void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx
             patch.push_back(current);
         }
     }
-    remove(patchfile);
 
     SurfaceGraph graph{patch};
 
@@ -615,11 +765,11 @@ void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx
         dual_graph.add({to_hashable_coords(patch[idx].c), to_hashable_coords(patch[idx].a)}, idx);
     }
 
-    auto[corners, midpoints, corner_neighbors] = find_polygon_info(data, graph, patch_idx);
+    auto polygon_edges = find_polygon_edges(data, graph, patch_idx);
 
-    auto center = find_center(graph, corners);
+    auto center = find_center(graph, polygon_edges);
 
-    auto paths_to_midpoints = build_midpoint_paths(patch, graph, dual_graph, center, midpoints);
+    auto paths_to_midpoints = build_midpoint_paths(patch, graph, dual_graph, center, polygon_edges);
 
     std::unordered_set<SymmetricEdge> banned;
     for (const auto& path : paths_to_midpoints)
@@ -631,21 +781,24 @@ void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx
     }
 
     std::vector<std::size_t> starting_triangles;
-    starting_triangles.reserve(corners.size());
-    for (std::size_t i = 0; i < corners.size(); ++i)
+    starting_triangles.reserve(polygon_edges.size());
+    for (const auto& edge : polygon_edges)
     {
-        starting_triangles.push_back(dual_graph.find(
-            {graph.coords(corners[i]), graph.coords(corner_neighbors[i])}).first);
+        starting_triangles.push_back(dual_graph.find({graph.coords(edge[0]), graph.coords(edge[1])}).first);
     }
 
     auto colors = paint_quads(patch, dual_graph, starting_triangles, banned);
 
+    remove(patchfile);
+
     std::vector<std::ofstream> quads;
-    for (std::size_t i = 0; i < midpoints.size(); ++i)
+    quads.reserve(starting_triangles.size());
+    for (std::size_t i = 0; i < starting_triangles.size(); ++i)
     {
         quads.emplace_back(patchfile.parent_path() / (patchfile.filename().string() + ":" + std::to_string(i)),
             std::ios_base::binary);
     }
+
 
     for (std::size_t i = 0; i < patch.size(); ++i)
     {

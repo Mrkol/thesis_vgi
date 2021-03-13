@@ -101,14 +101,7 @@ void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem
                 [cell = entry.path(), &total_clustering_data]
                 ()
                 {
-                    try
-                    {
-                        quadrangulate(cell, std::stoull(cell.filename()), total_clustering_data);
-                    }
-                    catch (...)
-                    {
-
-                    }
+                    quadrangulate(cell, std::stoull(cell.filename()), total_clustering_data);
                 });
         }
     }
