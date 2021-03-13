@@ -67,6 +67,7 @@ public:
 
     [[nodiscard]] FloatingNumber get_length(std::size_t u, std::size_t v) const
     {
+        return get_distance(u, v);
         auto it = lengths.find({u, v});
         if (it == lengths.end())
         {
@@ -143,9 +144,11 @@ private:
 };
 
 // TODO: this can be made faster
-std::vector<FloatingNumber> dijkstra(const SurfaceGraph& graph,  std::size_t start,
-    const std::function<FloatingNumber(std::size_t)>& scale_factor = [](std::size_t) { return 1; },
-    const std::function<FloatingNumber(std::size_t)>& heuristic = [](std::size_t) { return 0; })
+// Don't use this "raw"
+template<bool ASTAR, bool SCALED>
+std::vector<FloatingNumber> generic_pathfinder(const SurfaceGraph& graph,  std::size_t start,
+    fu2::unique_function<FloatingNumber(std::size_t)> scale_factor = {},
+    std::size_t target = 0)
 {
     std::vector<FloatingNumber> distances;
     distances.resize(graph.vertex_count(), std::numeric_limits<FloatingNumber>::max());
@@ -161,19 +164,42 @@ std::vector<FloatingNumber> dijkstra(const SurfaceGraph& graph,  std::size_t sta
         auto current = queue.top().second;
         queue.pop();
 
+        if constexpr (ASTAR)
+        {
+            if (current == target)
+            {
+                return distances;
+            }
+        }
+
+
         for (auto adjacent : graph.adjacent_to(current))
         {
-            auto relaxed_distance = distances[current]
-                + graph.get_length(current, adjacent) / scale_factor(adjacent);
+            auto edge_length = graph.get_length(current, adjacent);
+            if constexpr (SCALED)
+            {
+                edge_length /= scale_factor(adjacent);
+            }
+            auto relaxed_distance = distances[current] + edge_length;
+
             if (relaxed_distance < distances[adjacent])
             {
                 distances[adjacent] = relaxed_distance;
-                queue.emplace(relaxed_distance + heuristic(adjacent), adjacent);
+                if constexpr (ASTAR)
+                {
+                    relaxed_distance += graph.get_distance(adjacent, target);
+                }
+                queue.emplace(relaxed_distance, adjacent);
             }
         }
     }
 
     return distances;
+}
+
+std::vector<FloatingNumber> dijkstra(const SurfaceGraph& graph, std::size_t start)
+{
+    return generic_pathfinder<false, false>(graph, start);
 }
 
 std::vector<std::size_t> recontstruct_shortest_path(
@@ -195,6 +221,19 @@ std::vector<std::size_t> recontstruct_shortest_path(
 
     std::reverse(result.begin(), result.end());
     return result;
+}
+
+std::vector<std::size_t> a_star(const SurfaceGraph& graph, std::size_t start, std::size_t finish)
+{
+    auto distances = generic_pathfinder<true, false>(graph, start, {}, finish);
+    return recontstruct_shortest_path(graph, distances, start, finish);
+}
+
+std::vector<std::size_t> scaled_a_star(const SurfaceGraph& graph, std::size_t start, std::size_t finish,
+    fu2::unique_function<FloatingNumber(std::size_t)> scale_factor)
+{
+    auto distances = generic_pathfinder<true, true>(graph, start, std::move(scale_factor), finish);
+    return recontstruct_shortest_path(graph, distances, start, finish);
 }
 
 std::vector<std::size_t>::const_iterator median_point(const SurfaceGraph& graph,
@@ -234,12 +273,7 @@ std::vector<std::size_t> find_center_recurse(const SurfaceGraph& graph, const st
         throw std::logic_error("Midpoint recursion not possible with < 3 corners");
     }
 
-    std::size_t m = 0;
-
-    {
-        auto distances = dijkstra(graph, corners[0]);
-        m = *median_point(graph, recontstruct_shortest_path(graph, distances, corners[0], corners[1]));
-    }
+    std::size_t m = *median_point(graph, a_star(graph, corners[0], corners[1]));
 
     auto distances = dijkstra(graph, m);
 
@@ -297,8 +331,7 @@ std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_e
     std::size_t naive_candidate = 0;
     if (current.size() == 2)
     {
-        auto distances = dijkstra(graph, current[0]);
-        naive_candidate = *median_point(graph, recontstruct_shortest_path(graph, distances, current[0], current[1]));
+        naive_candidate = *median_point(graph, a_star(graph, current[0], current[1]));
     }
     else
     {
@@ -477,13 +510,8 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             }
         }
 
-        {
-            auto distances = dijkstra(graph, center,
-                                      [&distances_to_boundary](size_t i) { return distances_to_boundary[i] + NUMERICAL_STABILITY_EPS; },
-                                      [m = *midpoints[0], &graph](size_t v) { return graph.get_distance(m, v); });
-
-            result[0] = recontstruct_shortest_path(graph, distances, center, *midpoints[0]);
-        }
+        result[0] = scaled_a_star(graph, center, *midpoints[0],
+            [&distances_to_boundary](size_t i) { return distances_to_boundary[i] + NUMERICAL_STABILITY_EPS; });
 
 
 
@@ -524,11 +552,8 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
         }
 
 
-        auto distances = dijkstra(graph, center,
-            [&distances_to_bad_paths](size_t i) { return distances_to_bad_paths[i] + NUMERICAL_STABILITY_EPS; },
-            [m = *midpoints[second_idx], &graph](size_t v) { return graph.get_distance(m, v); });
-
-        result[second_idx] = recontstruct_shortest_path(graph, distances, center, *midpoints[second_idx]);
+        result[second_idx] = scaled_a_star(graph, center, *midpoints[second_idx],
+            [&distances_to_bad_paths](size_t i) { return distances_to_bad_paths[i] + NUMERICAL_STABILITY_EPS; });
     }
 
     for (size_t iteration = 2; iteration < result.size(); ++iteration)
@@ -645,11 +670,8 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             }
         }
 
-        auto distances = dijkstra(graph, center,
-            [&distances_to_bad_paths](size_t u) { return distances_to_bad_paths[u] + NUMERICAL_STABILITY_EPS; },
-            [&graph, m = *target_midpoint](size_t u) { return graph.get_distance(u, m); });
-
-        *target_path = recontstruct_shortest_path(graph, distances, center, *target_midpoint);
+        *target_path = scaled_a_star(graph, center, *target_midpoint,
+            [&distances_to_bad_paths](size_t u) { return distances_to_bad_paths[u] + NUMERICAL_STABILITY_EPS; });
     }
     return result;
 }
@@ -745,15 +767,13 @@ std::vector<std::size_t> paint_quads(
 void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx, const ClusteringData& data)
 {
     std::vector<ThickTriangle> patch;
-    patch.reserve(file_size(patchfile) / sizeof(ThickTriangle));
+    patch.resize(file_size(patchfile) / sizeof(ThickTriangle));
     {
         std::ifstream input{patchfile, std::ios_base::binary};
-        ThickTriangle current;
-        while (input.read(reinterpret_cast<char*>(&current), sizeof(current)))
-        {
-            patch.push_back(current);
-        }
+        input.read(reinterpret_cast<char*>(patch.data()), file_size(patchfile));
     }
+
+    remove(patchfile);
 
     SurfaceGraph graph{patch};
 
@@ -788,8 +808,6 @@ void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx
     }
 
     auto colors = paint_quads(patch, dual_graph, starting_triangles, banned);
-
-    remove(patchfile);
 
     std::vector<std::ofstream> quads;
     quads.reserve(starting_triangles.size());
