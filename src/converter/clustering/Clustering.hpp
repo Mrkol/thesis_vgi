@@ -10,8 +10,10 @@
 struct ClusteringMetricConfig
 {
     FloatingNumber planarity_weight = 1;
-    FloatingNumber orientation_weight = 0;
-    FloatingNumber compactness_weight = 1;
+    // This might not work, I dunno
+    FloatingNumber orientation_weight = 1;
+    FloatingNumber irregularity_change_weight = 1;
+    FloatingNumber irregularity_weight = 1;
 };
 
 struct ClusteringConfig

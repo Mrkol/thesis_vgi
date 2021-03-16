@@ -80,26 +80,9 @@ Vector4 least_squares_plane(const Matrix4& planarity_quadric)
     return result;
 }
 
-FloatingNumber planarity_error(const Matrix4& planarity_quadric, std::size_t vertex_count, const Vector4& plane)
-{
-    return (plane.transpose()*planarity_quadric*plane).value() / vertex_count;
-}
-
-FloatingNumber orientation_error(const Matrix4& orientation_quadric, FloatingNumber area, const Vector4& plane)
-{
-    Vector4 normal = plane;
-    normal(3, 0) = 1;
-    return (normal.transpose()*orientation_quadric*normal).value() / area;
-}
-
 FloatingNumber irregularity(FloatingNumber perimeter, FloatingNumber area)
 {
     return perimeter*perimeter / (4*std::numbers::pi_v<FloatingNumber>*area);
-}
-
-FloatingNumber shape_error(FloatingNumber gamma, FloatingNumber gamma1, FloatingNumber gamma2)
-{
-    return (gamma - std::max(gamma1, gamma2))/gamma;
 }
 
 FloatingNumber after_merge_error(const Patch& first, const Patch& second, const IntersectionData& data,
@@ -122,13 +105,20 @@ FloatingNumber after_merge_error(const Patch& first, const Patch& second, const 
     FloatingNumber gamma = irregularity(perimeter, area);
 
 
-    FloatingNumber pe = planarity_error(plan_quad, vertex_count, plane);
-    FloatingNumber oe = orientation_error(orient_quad, area, plane);
-    FloatingNumber se = shape_error(gamma, gamma1, gamma2);
+    Vector4 plane_normal = plane;
+    plane_normal(3, 0) = 1;
 
-    return config.planarity_weight * pe
-           + config.orientation_weight * oe
-           + config.compactness_weight * se;
+    FloatingNumber pe = (plane.transpose()*plan_quad*plane).value() / vertex_count;
+    FloatingNumber oe = (plane_normal.transpose()*orient_quad*plane_normal).value() / area;
+    FloatingNumber se = (gamma - std::max(gamma1, gamma2))/gamma;
+    FloatingNumber ce = irregularity(perimeter, area);
+
+    return (config.planarity_weight * pe
+        + config.orientation_weight * oe
+        + config.irregularity_change_weight * se
+        + config.irregularity_weight * ce)
+            / (config.planarity_weight + config.orientation_weight
+                + config.irregularity_change_weight + config.irregularity_weight);
 }
 
 bool merge_preserve_topological_invariants(std::size_t first, std::size_t second,

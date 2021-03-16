@@ -21,6 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 if (UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror")
+#    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lprofiler -ltcmalloc")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

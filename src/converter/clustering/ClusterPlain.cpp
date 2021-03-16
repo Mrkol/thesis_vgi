@@ -38,10 +38,19 @@ void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem
         StaticThreadPool pool;
         for (std::size_t i = 0; i < cells.size(); ++i)
         {
-            pool.submit([&datas, &cells, memory_limit = memory_limit / cells.size(), i, metric_config, error_threshold]
+            pool.submit([&datas, &cells, metric_config, error_threshold, i,
+                memory_limit = memory_limit / cells.size()]
                 ()
                 {
-                    datas[i] = incore_cluster(cells[i], metric_config, memory_limit, error_threshold, 0.3);
+                    if (cells[i].filename() != BORDER_FILENAME)
+                    {
+                        datas[i] = incore_cluster(cells[i],
+                            metric_config, memory_limit, error_threshold / std::sqrt(cells.size()), 0.3);
+                    }
+                    else
+                    {
+                        datas[i] = triangle_soup_to_clusters(read_plainfile(cells[i]));
+                    }
                 });
         }
     }
@@ -53,10 +62,8 @@ void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem
         std::ofstream plain_rewrite{plainfile, std::ios_base::app | std::ios_base::binary};
         for (const auto& cell : cells)
         {
-            {
-                std::ifstream in{cell, std::ios_base::binary};
-                plain_rewrite << in.rdbuf();
-            }
+            std::ifstream in{cell, std::ios_base::binary};
+            plain_rewrite << in.rdbuf();
         }
         std::filesystem::remove_all(cellsdir);
     }

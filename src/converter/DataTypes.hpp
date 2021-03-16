@@ -3,6 +3,8 @@
 #include <tuple>
 #include <cmath>
 #include <array>
+#include <vector>
+#include <fstream>
 #include <numeric>
 #include <Eigen/Dense>
 
@@ -93,4 +95,15 @@ struct Dimensions
 inline FloatingNumber MeanDimension(Dimensions d)
 {
 	return (d.max_x + d.max_y + d.max_z - d.min_x - d.min_y - d.min_z) / 3;
+}
+
+inline std::vector<ThickTriangle> read_plainfile(const std::filesystem::path& path)
+{
+    std::vector<ThickTriangle> triangles;
+    triangles.resize(file_size(path) / sizeof(ThickTriangle));
+
+    std::ifstream in{path, std::ios_base::binary};
+    in.read(reinterpret_cast<char*>(triangles.data()), file_size(path));
+
+    return triangles;
 }

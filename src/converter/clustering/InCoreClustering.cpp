@@ -7,7 +7,6 @@
 #include <iostream>
 
 #include "../SurfaceHashTable.hpp"
-#include "../DataTypes.hpp"
 
 
 ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& triangles)
@@ -115,13 +114,7 @@ ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& trian
 ClusteringData incore_cluster(const std::filesystem::path& plain, ClusteringMetricConfig metric_config,
     std::size_t target_memory, FloatingNumber max_error, FloatingNumber min_relative_cluster_count_change)
 {
-	std::vector<ThickTriangle> triangles;
-	triangles.resize(file_size(plain) / sizeof(ThickTriangle));
-
-	{
-		std::ifstream in{plain, std::ios_base::binary};
-        in.read(reinterpret_cast<char*>(triangles.data()), file_size(plain));
-	}
+    auto triangles = read_plainfile(plain);
 
 	ClusteringConfig config
     {
