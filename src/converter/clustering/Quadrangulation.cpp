@@ -1,147 +1,15 @@
-#include "Quadrangulate.hpp"
+#include "Quadrangulation.hpp"
 
 #include <vector>
 #include <fstream>
 #include <unordered_map>
 #include <queue>
+#include <common/ScopedTimer.hpp>
 
-#include "../DataTypes.hpp"
 #include "Clustering.hpp"
 #include "../SurfaceHashTable.hpp"
+#include "../SurfaceGraph.hpp"
 
-
-// TODO: This is not a good abstraction, redesign
-class SurfaceGraph
-{
-public:
-    explicit SurfaceGraph(const std::vector<ThickTriangle>& triangles)
-    {
-        // TODO: LESS ALLOCATIONS FFS
-        for (const auto& triangle : triangles)
-        {
-            ThickVertex ThickTriangle::*fields[] = {&ThickTriangle::a, &ThickTriangle::b, &ThickTriangle::c};
-            for (auto field : fields)
-            {
-                auto vertex = to_hashable_coords(triangle.*field);
-                auto it = vertex_indices.find(vertex);
-                if (it == vertex_indices.end())
-                {
-                    vertex_indices.insert(it, {vertex, vertex_indices.size()});
-                }
-            }
-        }
-
-        vertices.resize(vertex_indices.size());
-        for (auto&[coords, idx] : vertex_indices)
-        {
-            vertices[idx] = coords;
-        }
-
-        adjacency_list.resize(vertex_indices.size());
-        for (auto& triangle : triangles)
-        {
-            ThickVertex ThickTriangle::*fields[] = {&ThickTriangle::a, &ThickTriangle::b, &ThickTriangle::c};
-            for (auto first : fields)
-            {
-                for (auto second : fields)
-                {
-                    if (first != second)
-                    {
-                        auto first_coords = to_hashable_coords(triangle.*first);
-                        auto second_coords = to_hashable_coords(triangle.*second);
-
-                        adjacency_list[vertex_indices[first_coords]].insert(vertex_indices[second_coords]);
-
-                        SymmetricPair<std::size_t> edge{vertex_indices[first_coords], vertex_indices[second_coords]};
-                        lengths[edge] = length({first_coords, second_coords});
-                    }
-                }
-            }
-        }
-    }
-
-    [[nodiscard]] const std::unordered_set<std::size_t>& adjacent_to(std::size_t idx) const
-    {
-        return adjacency_list[idx];
-    }
-
-    [[nodiscard]] FloatingNumber get_length(std::size_t u, std::size_t v) const
-    {
-        return get_distance(u, v);
-        auto it = lengths.find({u, v});
-        if (it == lengths.end())
-        {
-            throw std::logic_error("Length missing!");
-        }
-        return it->second;
-    }
-
-    [[nodiscard]] FloatingNumber get_distance(std::size_t u, std::size_t v) const
-    {
-        return length({vertices[u], vertices[v]});
-    }
-
-    [[nodiscard]] std::size_t index_of(HashableCoords point) const
-    {
-        auto it = vertex_indices.find(point);
-        if (it == vertex_indices.end())
-        {
-            throw std::logic_error("This vertex is not indexed in this graph!");
-        }
-        return it->second;
-    }
-
-    [[nodiscard]] HashableCoords coords(std::size_t idx) const
-    {
-        return vertices[idx];
-    }
-
-    [[nodiscard]] bool is_edge(std::size_t u, std::size_t v)
-    {
-        return lengths.contains({u, v});
-    }
-
-    [[nodiscard]] std::size_t vertex_count() const
-    {
-        return vertex_indices.size();
-    }
-
-    // Look at the picture where this thing is used
-    void split_edge(HashableCoords u, HashableCoords v, HashableCoords a, HashableCoords b, HashableCoords m)
-    {
-        auto u_idx = index_of(u);
-        auto v_idx = index_of(v);
-        auto a_idx = index_of(a);
-        auto b_idx = index_of(b);
-
-        std::size_t m_idx = vertices.size();
-        vertex_indices[m] = m_idx;
-        vertices.push_back(m);
-        adjacency_list.push_back({a_idx, b_idx, u_idx, v_idx});
-
-        adjacency_list[u_idx].erase(v_idx);
-        adjacency_list[v_idx].erase(u_idx);
-
-        adjacency_list[a_idx].insert(m_idx);
-        adjacency_list[b_idx].insert(m_idx);
-        adjacency_list[u_idx].insert(m_idx);
-        adjacency_list[v_idx].insert(m_idx);
-
-        lengths.erase(SymmetricPair<std::size_t>{u_idx, v_idx});
-
-        lengths[SymmetricPair<std::size_t>{a_idx, m_idx}] = length({a, m});
-        lengths[SymmetricPair<std::size_t>{v_idx, m_idx}] = length({v, m});
-        lengths[SymmetricPair<std::size_t>{b_idx, m_idx}] = length({b, m});
-        lengths[SymmetricPair<std::size_t>{u_idx, m_idx}] = length({u, m});
-    }
-
-private:
-    std::unordered_map<HashableCoords, std::size_t> vertex_indices;
-    std::vector<HashableCoords> vertices;
-
-    std::vector<std::unordered_set<std::size_t>> adjacency_list;
-    std::unordered_map<SymmetricPair<std::size_t>, FloatingNumber> lengths;
-};
 
 // TODO: this can be made faster
 // Don't use this "raw"
@@ -175,7 +43,7 @@ std::vector<FloatingNumber> generic_pathfinder(const SurfaceGraph& graph,  std::
 
         for (auto adjacent : graph.adjacent_to(current))
         {
-            auto edge_length = graph.get_length(current, adjacent);
+            auto edge_length = graph.get_distance(current, adjacent);
             if constexpr (SCALED)
             {
                 edge_length /= scale_factor(adjacent);
@@ -247,14 +115,14 @@ std::vector<std::size_t>::const_iterator median_point(const SurfaceGraph& graph,
     FloatingNumber total_length = 0;
     for (std::size_t i = 1; i < path.size(); ++i)
     {
-        total_length += graph.get_length(path[i], path[i - 1]);
+        total_length += graph.get_distance(path[i], path[i - 1]);
     }
 
     auto it = path.begin();
     FloatingNumber current = 0;
     while (std::next(it) != path.end())
     {
-        auto potential = current + graph.get_length(*it, *std::next(it));
+        auto potential = current + graph.get_distance(*it, *std::next(it));
         if (std::abs(total_length / 2 - current) < std::abs(total_length / 2 - potential))
         {
             break;
@@ -385,6 +253,11 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceH
     // f, s
     auto[first_idx, second_idx] = dual_graph.find({u, v});
 
+    if (first_idx == Patch::NONE)
+    {
+        throw std::logic_error("Trying to split an edge that does not belong to any triangle!");
+    }
+
     auto get_third =
         [](ThickTriangle& triangle, SymmetricEdge e) -> ThickVertex&
         {
@@ -397,32 +270,42 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceH
             throw std::logic_error("Edge didn't come from this triangle!");
         };
 
-    auto a = to_hashable_coords(get_third(patch[first_idx], {u, v}));
-    auto b = to_hashable_coords(get_third(patch[second_idx], {u, v}));
+    HashableCoords a = to_hashable_coords(get_third(patch[first_idx], {u, v}));
+    HashableCoords b{};
+    if (second_idx != Patch::NONE)
+    {
+        b = to_hashable_coords(get_third(patch[second_idx], {u, v}));
+    }
 
 
     // Split actual geometric data
     ThickVertex m_thick;
-    size_t first_prime_idx = 0;
-    size_t second_prime_idx = 0;
+    size_t first_prime_idx = Patch::NONE;
+    size_t second_prime_idx = Patch::NONE;
     {
-        m_thick = midpoint(get_third(patch[second_idx], {b, v}), get_third(patch[first_idx], {a, u}));
+        m_thick = midpoint(get_third(patch[first_idx], {a, v}), get_third(patch[first_idx], {a, u}));
 
         // Duplicate first and shift u -> m
         first_prime_idx = patch.size();
         patch.push_back(patch[first_idx]);
         get_third(patch.back(), {a, v}) = m_thick;
 
-        // Duplicate second and shift v -> m
-        second_prime_idx = patch.size();
-        patch.push_back(patch[second_idx]);
-        get_third(patch.back(), {b, u}) = m_thick;
+        if (second_idx != Patch::NONE)
+        {
+            // Duplicate second and shift v -> m
+            second_prime_idx = patch.size();
+            patch.push_back(patch[second_idx]);
+            get_third(patch.back(), {b, u}) = m_thick;
+        }
 
         // For first, shift v -> m
         get_third(patch[first_idx], {a, u}) = m_thick;
 
-        // for second, shift u -> m
-        get_third(patch[second_idx], {b, v}) = m_thick;
+        if (second_idx != Patch::NONE)
+        {
+            // for second, shift u -> m
+            get_third(patch[second_idx], {b, v}) = m_thick;
+        }
     }
 
     auto m = to_hashable_coords(m_thick);
@@ -431,30 +314,53 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceH
     // Don't try to read this. Look at the picture above.
     {
         dual_graph.remove_triangle(a, u, v);
-        dual_graph.remove_triangle(u, v, b);
+        if (second_idx != Patch::NONE)
+        {
+            dual_graph.remove_triangle(u, v, b);
+        }
+
         dual_graph.add({a, v}, first_prime_idx);
-        dual_graph.add({v, b}, second_idx);
-        dual_graph.add({b, u}, second_prime_idx);
+        if (second_idx != Patch::NONE)
+        {
+            dual_graph.add({v, b}, second_idx);
+            dual_graph.add({b, u}, second_prime_idx);
+        }
         dual_graph.add({u, a}, first_idx);
 
         dual_graph.add({a, m}, first_idx);
         dual_graph.add({a, m}, first_prime_idx);
         dual_graph.add({v, m}, first_prime_idx);
-        dual_graph.add({v, m}, second_idx);
-        dual_graph.add({b, m}, second_idx);
-        dual_graph.add({b, m}, second_prime_idx);
-        dual_graph.add({u, m}, second_prime_idx);
+        if (second_idx != Patch::NONE)
+        {
+            dual_graph.add({v, m}, second_idx);
+            dual_graph.add({b, m}, second_idx);
+            dual_graph.add({b, m}, second_prime_idx);
+            dual_graph.add({u, m}, second_prime_idx);
+        }
         dual_graph.add({u, m}, first_idx);
     }
 
     // Split graph
-    graph.split_edge(u, v, a, b, m);
+    graph.split_edge(u, v, a, second_idx != Patch::NONE ? std::make_optional(b) : std::nullopt, m);
 }
 
 std::vector<std::vector<std::size_t>> build_midpoint_paths(
     std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceHashTable<FloatingNumber>& dual_graph,
-    size_t center, const PolygonEdges& polygon_edges)
+    size_t center, PolygonEdges& polygon_edges)
 {
+    // First we have to split edges that are only 2 verts in length
+    for (auto& edge : polygon_edges)
+    {
+        if (edge.size() == 2)
+        {
+            auto u = edge[0];
+            auto v = edge[1];
+            edge = {u, graph.vertex_count(), v};
+            split_edge(patch, graph, dual_graph, u, v);
+        }
+    }
+
+
     // This hardcoded epsilon might be a bad idea
     static constexpr FloatingNumber NUMERICAL_STABILITY_EPS = 1e-6;
 
@@ -466,6 +372,15 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
     }
 
     std::vector<std::vector<size_t>> result{midpoints.size()};
+
+    auto check_not_border_edge =
+        [&graph, &dual_graph](std::size_t u, std::size_t v)
+        {
+            if (dual_graph.find({graph.coords(u), graph.coords(v)}).second == Patch::NONE)
+            {
+                throw std::logic_error("Tried to split border edge in a place where it shouldn't happen!");
+            }
+        };
 
     // First two paths are a special case
     {
@@ -491,6 +406,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
                 }
                 if (graph.is_edge(total_border[i], total_border[j]))
                 {
+                    check_not_border_edge(total_border[i], total_border[j]);
                     split_edge(patch, graph, dual_graph, total_border[i], total_border[j]);
                 }
             }
@@ -530,6 +446,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
 
                 if (graph.is_edge(*u_it, v))
                 {
+                    check_not_border_edge(*u_it, v);
                     split_edge(patch, graph, dual_graph, *u_it, v);
 
                     distances_to_boundary.push_back(std::numeric_limits<FloatingNumber>::max());
@@ -602,17 +519,17 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             auto our_edge = polygon_edges.begin() + std::distance(result.begin(), target_path);
             auto right_edge = polygon_edges.begin() + std::distance(result.begin(), next_path);
 
-            std::copy(previous_midpoint, std::prev(left_edge->end()), std::back_inserter(left));
+            std::copy(previous_midpoint, std::prev(left_edge->cend()), std::back_inserter(left));
             ++left_edge;
             while (left_edge != our_edge)
             {
                 std::copy(left_edge->begin(), std::prev(left_edge->end()), std::back_inserter(left));
                 ++left_edge;
             }
-            std::copy(our_edge->begin(), target_midpoint, std::back_inserter(left));
+            std::copy(our_edge->cbegin(), target_midpoint, std::back_inserter(left));
 
 
-            std::copy(std::prev(std::make_reverse_iterator(next_midpoint)), std::prev(right_edge->rend()),
+            std::copy(std::prev(std::make_reverse_iterator(next_midpoint)), std::prev(right_edge->crend()),
                 std::back_inserter(right));
             if (right_edge == polygon_edges.begin())
             {
@@ -624,7 +541,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
                 std::copy(right_edge->rbegin(), std::prev(right_edge->rend()), std::back_inserter(right));
                 --right_edge;
             }
-            std::copy(right_edge->rbegin(), std::prev(std::make_reverse_iterator(target_midpoint)),
+            std::copy(right_edge->crbegin(), std::prev(std::make_reverse_iterator(target_midpoint)),
                 std::back_inserter(right));
         }
 
@@ -646,6 +563,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             {
                 if (graph.is_edge(u, v))
                 {
+                    check_not_border_edge(u, v);
                     split_edge(patch, graph, dual_graph, u, v);
                 }
             }
@@ -764,7 +682,8 @@ std::vector<std::size_t> paint_quads(
     return triangle_colors;
 }
 
-void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx, const ClusteringData& data)
+void quadrangulate(const std::filesystem::path& patchfile, const std::filesystem::path& info_directory,
+    std::size_t patch_idx, const ClusteringData& data)
 {
     std::vector<ThickTriangle> patch;
     patch.resize(file_size(patchfile) / sizeof(ThickTriangle));
@@ -806,25 +725,57 @@ void quadrangulate(const std::filesystem::path& patchfile, std::size_t patch_idx
     {
         starting_triangles.push_back(dual_graph.find({graph.coords(edge[0]), graph.coords(edge[1])}).first);
     }
+    // hack: starting edge corresponds to the previous patch
+    std::rotate(starting_triangles.begin(), std::next(starting_triangles.begin()), starting_triangles.end());
 
     auto colors = paint_quads(patch, dual_graph, starting_triangles, banned);
 
-    std::vector<std::ofstream> quads;
-    quads.reserve(starting_triangles.size());
-    for (std::size_t i = 0; i < starting_triangles.size(); ++i)
     {
-        quads.emplace_back(patchfile.parent_path() / (patchfile.filename().string() + ":" + std::to_string(i)),
-            std::ios_base::binary);
+        std::vector<std::ofstream> quads;
+        quads.reserve(starting_triangles.size());
+        for (std::size_t i = 0; i < starting_triangles.size(); ++i)
+        {
+            quads.emplace_back(patchfile.parent_path() / (patchfile.filename().string() + ":" + std::to_string(i)),
+                std::ios_base::binary);
+        }
+
+        for (std::size_t i = 0; i < patch.size(); ++i)
+        {
+            if (colors[i] == COLOR_NONE)
+            {
+                continue;
+            }
+            quads[colors[i]].write(reinterpret_cast<char*>(&(patch[i])), sizeof(patch[i]));
+        }
     }
 
-
-    for (std::size_t i = 0; i < patch.size(); ++i)
+    for (std::size_t i = 0; i < starting_triangles.size(); ++i)
     {
-        if (colors[i] == COLOR_NONE)
-        {
-            continue;
-        }
-        quads[colors[i]].write(reinterpret_cast<char*>(&(patch[i])), sizeof(patch[i]));
+        auto path = info_directory / (patchfile.filename().string() + ":" + std::to_string(i));
+        std::ofstream out{path, std::ios_base::binary};
+
+        std::size_t next = i + 1 == starting_triangles.size() ? 0 : i + 1;
+
+        auto transform = [&graph](std::size_t idx)
+            {
+                return graph.coords(idx);
+            };
+
+        // from center to midpoint 1
+        write_range(out, paths_to_midpoints[i].begin(), paths_to_midpoints[i].end(), transform);
+
+        // from midpoint 1 to corner
+        auto midpoint1_it = std::find(polygon_edges[i].begin(), polygon_edges[i].end(),
+            paths_to_midpoints[i].back());
+        write_range(out, midpoint1_it, polygon_edges[i].end(), transform);
+
+        // from corner to midpoint 2
+        auto midpoint2_it = std::find(polygon_edges[next].begin(), polygon_edges[next].end(),
+            paths_to_midpoints[next].back());
+        write_range(out, polygon_edges[next].begin(), std::next(midpoint2_it), transform);
+
+        // from corner to center
+        write_range(out, paths_to_midpoints[next].rbegin(), paths_to_midpoints[next].rend(), transform);
     }
 }
 

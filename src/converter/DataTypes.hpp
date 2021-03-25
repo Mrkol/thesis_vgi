@@ -19,12 +19,17 @@ static_assert(sizeof(HashableCoords) == sizeof(FloatingNumber)*3);
 
 using SymmetricEdge = SymmetricPair<HashableCoords>;
 
+inline FloatingNumber squared_length(const SymmetricEdge& edge)
+{
+    auto sqr = [](FloatingNumber x) { return x*x; };
+    return sqr(std::get<0>(edge.first) - std::get<0>(edge.second))
+        + sqr(std::get<1>(edge.first) - std::get<1>(edge.second))
+        + sqr(std::get<2>(edge.first) - std::get<2>(edge.second));
+}
+
 inline FloatingNumber length(const SymmetricEdge& edge)
 {
-	auto sqr = [](FloatingNumber x) { return x*x; };
-	return std::sqrt(sqr(std::get<0>(edge.first) - std::get<0>(edge.second))
-		+ sqr(std::get<1>(edge.first) - std::get<1>(edge.second))
-		+ sqr(std::get<2>(edge.first) - std::get<2>(edge.second)));
+    return std::sqrt(squared_length(edge));
 }
 
 struct ThickVertex
@@ -38,6 +43,8 @@ using Vector4 = Eigen::Matrix<FloatingNumber, 4, 1>;
 using Matrix4 = Eigen::Matrix<FloatingNumber, 4, 4>;
 using Vector3 = Eigen::Matrix<FloatingNumber, 3, 1>;
 using Matrix3 = Eigen::Matrix<FloatingNumber, 3, 3>;
+using Vector2 = Eigen::Matrix<FloatingNumber, 2, 1>;
+using Matrix2 = Eigen::Matrix<FloatingNumber, 2, 2>;
 
 inline ThickVertex midpoint(const ThickVertex& a, const ThickVertex& b)
 {
@@ -106,4 +113,27 @@ inline std::vector<ThickTriangle> read_plainfile(const std::filesystem::path& pa
     in.read(reinterpret_cast<char*>(triangles.data()), file_size(path));
 
     return triangles;
+}
+
+template<class Iter, class Transform>
+void write_range(std::ostream& out, Iter begin, Iter end, const Transform& transform)
+{
+    std::size_t size = std::distance(begin, end);
+    out.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    while (begin != end)
+    {
+        auto transformed = transform(*begin++);
+        out.write(reinterpret_cast<const char*>(&transformed), sizeof(transformed));
+    }
+}
+
+template<class T>
+std::vector<T> read_vector(std::istream& in)
+{
+    std::size_t size = 0;
+    in.read(reinterpret_cast<char*>(&size), sizeof(size));
+    std::vector<T> result;
+    result.resize(size);
+    in.read(reinterpret_cast<char*>(result.data()), size * sizeof(T));
+    return result;
 }

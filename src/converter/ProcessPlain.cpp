@@ -1,19 +1,23 @@
-#include "ClusterPlain.hpp"
+#include "ProcessPlain.hpp"
 
 #include <fstream>
 
-#include "Gridify.hpp"
-#include "InCoreClustering.hpp"
-#include "OutOfCoreClustering.hpp"
-#include "Quadrangulate.hpp"
+#include "clustering/Gridify.hpp"
+#include "clustering/InCoreClustering.hpp"
+#include "clustering/OutOfCoreClustering.hpp"
+#include "clustering/Quadrangulation.hpp"
+#include "Parametrization.hpp"
 #include "common/ScopedTimer.hpp"
 #include "common/StaticThreadPool.hpp"
 
 
-void debug_output(const std::filesystem::path& folder, const std::filesystem::path& output);
+void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output);
+void debug_parametrization_output(const std::filesystem::path& quad_folder,
+    const std::filesystem::path& quad_info_folder, const std::filesystem::path& output);
 
-void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem::path& workdir,
-    ClusteringMetricConfig metric_config, std::size_t memory_limit, FloatingNumber error_threshold)
+void process_plain(const std::filesystem::path& plainfile, const std::filesystem::path& workdir,
+    ClusteringMetricConfig metric_config, std::size_t memory_limit, FloatingNumber error_threshold,
+    ParametrizationConfig parametrization_config)
 {
     auto cellsdir = workdir / "cells";
     create_directory(cellsdir);
@@ -97,7 +101,11 @@ void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    debug_output(clusters_path, workdir / "clustered");
+    debug_cluster_output(clusters_path, workdir / "clustered");
+
+    auto quad_info_path = workdir / "cluster_info";
+
+    create_directory(quad_info_path);
 
     {
         ScopedTimer timer("quadrangulation");
@@ -105,20 +113,35 @@ void cluster_plain(const std::filesystem::path& plainfile, const std::filesystem
         for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
         {
             pool.submit(
-                [cell = entry.path(), &total_clustering_data]
-                ()
+                [cell = entry.path(), &total_clustering_data, &quad_info_path]
+                    ()
                 {
-                    quadrangulate(cell, std::stoull(cell.filename()), total_clustering_data);
+                    quadrangulate(cell, quad_info_path, std::stoull(cell.filename()), total_clustering_data);
                 });
         }
     }
 
-    debug_output(clusters_path, workdir / "quadrangulated");
+    debug_cluster_output(clusters_path, workdir / "quadrangulated");
+
+    {
+        ScopedTimer timer("parametrization");
+        StaticThreadPool pool;
+        for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
+        {
+            pool.submit(
+                [cell = entry.path(), &quad_info_path, &parametrization_config]()
+                {
+                    parametrize(cell, quad_info_path, parametrization_config);
+                });
+        }
+    }
+
+    debug_parametrization_output(clusters_path, quad_info_path, workdir / "parametrized");
 }
 
-void debug_output(const std::filesystem::path& folder, const std::filesystem::path& output)
+void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output)
 {
-    ScopedTimer timer("debug output");
+    ScopedTimer timer("debug cluster output");
 
     std::ofstream clustered{output, std::ios_base::binary};
 
@@ -139,6 +162,66 @@ void debug_output(const std::filesystem::path& folder, const std::filesystem::pa
         {
             tri.a.u = tri.b.u = tri.c.u = static_cast<FloatingNumber>(patch_idx);
             tri.a.v = tri.b.v = tri.c.v = static_cast<FloatingNumber>(patch_count);
+            tri.a.w = tri.b.w = tri.c.w = 0;
+            clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
+        }
+
+        ++patch_idx;
+    }
+}
+
+void debug_parametrization_output(const std::filesystem::path& quad_folder,
+    const std::filesystem::path& quad_info_folder, const std::filesystem::path& output)
+{
+    ScopedTimer timer("debug cluster output");
+
+    std::ofstream clustered{output, std::ios_base::binary};
+
+    std::size_t fp_size = sizeof(FloatingNumber);
+    static_assert(sizeof(fp_size) == 8);
+    clustered.write(reinterpret_cast<char*>(&fp_size), sizeof(fp_size));
+
+
+    std::size_t patch_idx = 0;
+    for (const auto& entry : std::filesystem::directory_iterator{quad_folder})
+    {
+        std::unordered_map<HashableCoords, std::tuple<FloatingNumber, FloatingNumber>> mapping;
+        {
+            auto info_path = quad_info_folder / entry.path().filename();
+
+            using MappingElement = std::pair<HashableCoords, std::tuple<FloatingNumber, FloatingNumber>>;
+            std::vector<MappingElement> elements;
+            elements.resize(file_size(info_path) / sizeof(MappingElement));
+
+            std::ifstream info{info_path};
+            info.read(reinterpret_cast<char*>(elements.data()), file_size(info_path));
+
+            for (auto&[key, value] : elements)
+            {
+                mapping.emplace(key, value);
+            }
+        }
+
+
+
+        std::ifstream plain{entry.path(), std::ios_base::binary};
+
+        ThickTriangle tri{};
+        while (plain.read(reinterpret_cast<char*>(&tri), sizeof(tri)))
+        {
+            auto[a, b, c] = triangle_verts(tri);
+            auto m_a = mapping[a];
+            auto m_b = mapping[b];
+            auto m_c = mapping[c];
+            tri.a.u = std::get<0>(m_a);
+            tri.a.v = std::get<1>(m_a);
+
+            tri.b.u = std::get<0>(m_b);
+            tri.b.v = std::get<1>(m_b);
+
+            tri.c.u = std::get<0>(m_c);
+            tri.c.v = std::get<1>(m_c);
+
             tri.a.w = tri.b.w = tri.c.w = 0;
             clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
         }
