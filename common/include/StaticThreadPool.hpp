@@ -17,6 +17,9 @@ public:
 
     void submit(Job job);
 
+    static constexpr std::size_t THREAD_NONE = std::numeric_limits<std::size_t>::max();
+    static std::size_t current_thread_index();
+
     ~StaticThreadPool();
 
 private:

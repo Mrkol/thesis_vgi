@@ -46,7 +46,7 @@ void optimize_uniform_springs(const SurfaceGraph& graph, const std::unordered_se
 void initialize_boundary(const SurfaceGraph& graph, const std::array<std::vector<HashableCoords>, 4>& edges,
     std::vector<Vector2>& result)
 {
-    std::__1::array<std::__1::vector<FloatingNumber>, 4> prefix_sums;
+    std::array<std::vector<FloatingNumber>, 4> prefix_sums;
     for (size_t i = 0; i < 4; ++i)
     {
         prefix_sums[i].resize(edges[i].size(), 0);
@@ -321,7 +321,7 @@ void parametrize(const std::filesystem::path& patch, const std::filesystem::path
         for (std::size_t i = 0; i < graph.vertex_count(); ++i)
         {
             auto M = graph.coords(i);
-            std::tuple<FloatingNumber, FloatingNumber> m {result[i].x(), result[i].y()};
+            MappingCoords m {result[i].x(), result[i].y()};
             out.write(reinterpret_cast<char*>(&M), sizeof(M));
             out.write(reinterpret_cast<char*>(&m), sizeof(m));
         }

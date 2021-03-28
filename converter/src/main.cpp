@@ -1,8 +1,8 @@
 #include <cxxopts.hpp>
 #include <fstream>
 
-#include "common/StaticThreadPool.hpp"
-#include "common/ScopedTimer.hpp"
+#include "StaticThreadPool.hpp"
+#include "ScopedTimer.hpp"
 
 #include "ToPlainConverters.hpp"
 #include "ProcessPlain.hpp"

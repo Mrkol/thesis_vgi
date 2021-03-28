@@ -4,7 +4,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <queue>
-#include <common/ScopedTimer.hpp>
+#include <stack>
 
 #include "Clustering.hpp"
 #include "../SurfaceHashTable.hpp"

@@ -5,6 +5,7 @@
 #include <array>
 #include <vector>
 #include <fstream>
+#include <filesystem>
 #include <numeric>
 #include <Eigen/Dense>
 
@@ -16,6 +17,8 @@ using FloatingNumber = double;
 
 using HashableCoords = std::tuple<FloatingNumber, FloatingNumber, FloatingNumber>;
 static_assert(sizeof(HashableCoords) == sizeof(FloatingNumber)*3);
+
+using MappingCoords = std::tuple<FloatingNumber, FloatingNumber>;
 
 using SymmetricEdge = SymmetricPair<HashableCoords>;
 

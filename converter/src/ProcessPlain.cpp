@@ -7,8 +7,8 @@
 #include "clustering/OutOfCoreClustering.hpp"
 #include "clustering/Quadrangulation.hpp"
 #include "Parametrization.hpp"
-#include "common/ScopedTimer.hpp"
-#include "common/StaticThreadPool.hpp"
+#include "ScopedTimer.hpp"
+#include "StaticThreadPool.hpp"
 
 
 void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output);
