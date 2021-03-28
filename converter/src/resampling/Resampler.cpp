@@ -65,7 +65,7 @@ Resampler::Resampler(const ResamplerConfig& config)
     }
 
     vk::ApplicationInfo app_info{"VGI Resampler", 1, "Vulkan.hpp", 1, VK_API_VERSION_1_2};
-    vk::InstanceCreateInfo create_info{{}, &app_info, VALIDATION_LAYERS.size(), VALIDATION_LAYERS.data()};
+    vk::InstanceCreateInfo create_info{{}, &app_info, uint32_t(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data()};
     vk_instance = vk::createInstanceUnique(create_info);
 
     physical_device = vk_instance->enumeratePhysicalDevices().front();
@@ -92,15 +92,15 @@ Resampler::Resampler(const ResamplerConfig& config)
         {}, uint32_t(queue_idx), uint32_t(config.thread_count), priorities.data()};
     vk::PhysicalDeviceFeatures device_features{};
     vk::DeviceCreateInfo device_create_info{{}, 1, &device_queue_create_info,
-        VALIDATION_LAYERS.size(), VALIDATION_LAYERS.data(), {}, {}, &device_features};
+        uint32_t(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data(), {}, {}, &device_features};
 
     device = physical_device.createDeviceUnique(device_create_info);
 
-    per_thread_datum.resize(config.thread_count, {});
+    per_thread_datum.resize(config.thread_count);
 
     for (std::size_t idx = 0; idx < config.thread_count; ++idx)
     {
-        per_thread_datum[idx].queue = device->getQueue(queue_idx, idx);
+        per_thread_datum[idx].queue = device->getQueue(uint32_t(queue_idx), uint32_t(idx));
         per_thread_datum[idx].rendered_fence = device->createFenceUnique(vk::FenceCreateInfo{});
     }
 
@@ -169,7 +169,7 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
     vk::PipelineVertexInputStateCreateInfo vertex_input_info{
         {},
         1, &vertex_input_binding_description,
-        vertex_input_attribute_descriptions.size(), vertex_input_attribute_descriptions.data()
+        uint32_t(vertex_input_attribute_descriptions.size()), vertex_input_attribute_descriptions.data()
     };
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly_info{{}, vk::PrimitiveTopology::eTriangleList, false};
@@ -256,8 +256,8 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
         });
 
         data.framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-            {}, render_pass, /* attachment count */ 1, &data.image_view,
-            config.frequency, config.frequency, /* layers */ 1
+            {}, render_pass.get(), /* attachment count */ 1, &data.image_view.get(),
+            uint32_t(config.frequency), uint32_t(config.frequency), /* layers */ 1
         });
     }
 }
@@ -270,7 +270,7 @@ std::vector<Vertex> read_vertex_data(const std::filesystem::path& quad, const st
     {
         std::vector<std::pair<HashableCoords, MappingCoords>> raw_mapping(file_size(info));
         std::ifstream in{info, std::ios_base::binary};
-        in.read(raw_mapping.data());
+        in.read(reinterpret_cast<char*>(raw_mapping.data()), raw_mapping.size());
         for (auto[M, m] : raw_mapping)
         {
             mapping.emplace(M, m);
@@ -307,8 +307,9 @@ void Resampler::Resample(const std::filesystem::path& quad, const std::filesyste
         1, &data.command_buffer.get(),
         /* signal semaphores */ 0, nullptr
     };
-    data.queue.submit(1, &submit_info, data.rendered_fence.get());
-    if (device->waitForFences({data.rendered_fence.get()}, true, 1'000'000'000) != vk::Result::eSuccess)
+    
+    if (data.queue.submit(1, &submit_info, data.rendered_fence.get()) != vk::Result::eSuccess
+        || device->waitForFences({data.rendered_fence.get()}, true, 1'000'000'000) != vk::Result::eSuccess)
     {
         throw std::runtime_error("Resampling didnt succeed!");
     }
