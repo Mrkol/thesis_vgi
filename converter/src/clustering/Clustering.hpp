@@ -20,7 +20,7 @@ struct ClusteringConfig
 {
     ClusteringMetricConfig metric_config;
     fu2::unique_function<bool(FloatingNumber /*error*/,
-        std::size_t /*patch_count*/, std::size_t /*memory*/)> stopping_criterion;
+        std::size_t /*patch_count*/, std::size_t /*image_memory*/)> stopping_criterion;
 };
 
 // TODO: Allocators for speed

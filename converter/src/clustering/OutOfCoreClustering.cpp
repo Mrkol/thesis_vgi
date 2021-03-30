@@ -170,7 +170,7 @@ ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results,
     {
         metric_error,
         [max_error]
-        (FloatingNumber error, std::size_t /*patch_count*/, std::size_t /*memory*/)
+        (FloatingNumber error, std::size_t /*patch_count*/, std::size_t /*image_memory*/)
         {
             // TODO: Better criterion
             return error < max_error;

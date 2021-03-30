@@ -7,12 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 find_program(glslang_validator glslangValidator)
 
-function(target_add_shaders TARGET GLSL_SOURCE_FILES)
+function(target_add_shaders TARGET)
+    list(POP_FRONT ${ARGN})
+
     set(shader_dir "${CMAKE_CURRENT_BINARY_DIR}/shaders/")
 
-    foreach(GLSL ${GLSL_SOURCE_FILES})
+    foreach(GLSL ${ARGN})
         get_filename_component(FILE_NAME ${GLSL} NAME)
-        set(SPIRV "${temp_shader_dir}/${FILE_NAME}.spv")
+        set(SPIRV "${shader_dir}/${FILE_NAME}.spv")
         add_custom_command(
                 OUTPUT ${SPIRV}
                 COMMAND ${CMAKE_COMMAND} -E make_directory ${shader_dir}

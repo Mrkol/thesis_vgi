@@ -14,10 +14,13 @@
 void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output);
 void debug_parametrization_output(const std::filesystem::path& quad_folder,
     const std::filesystem::path& quad_info_folder, const std::filesystem::path& output);
+void debug_convert_resampled(const std::filesystem::path& resampled_dir, const std::filesystem::path& output_dir,
+    const ResamplerConfig& config);
 
 void process_plain(const std::filesystem::path& plainfile, const std::filesystem::path& workdir,
+    const std::filesystem::path& output_dir,
     ClusteringMetricConfig metric_config, std::size_t memory_limit, FloatingNumber error_threshold,
-    ParametrizationConfig parametrization_config)
+    ParametrizationConfig parametrization_config, ResamplerConfig resampler_config)
 {
     auto cellsdir = workdir / "cells";
     create_directory(cellsdir);
@@ -137,6 +140,35 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
     }
 
     debug_parametrization_output(clusters_path, quad_info_path, workdir / "parametrized");
+
+
+    auto resampled_dir = output_dir / "resampled";
+    create_directory(resampled_dir);
+
+    {
+        ScopedTimer timer("resampling");
+
+        if (resampler_config.thread_count == 0)
+        {
+            resampler_config.thread_count = std::thread::hardware_concurrency();
+        }
+
+        Resampler resampler{resampler_config};
+        StaticThreadPool pool{resampler_config.thread_count};
+
+        for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
+        {
+            pool.submit([patch = entry.path(), &quad_info_path, &resampled_dir, &resampler]()
+                {
+                    resampler.resample(patch, quad_info_path, resampled_dir,
+                        StaticThreadPool::current_thread_index());
+                });
+        }
+    }
+
+    auto debug_images_dir = workdir / "images";
+    create_directory(debug_images_dir);
+    debug_convert_resampled(resampled_dir, debug_images_dir, resampler_config);
 }
 
 void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output)
@@ -227,5 +259,45 @@ void debug_parametrization_output(const std::filesystem::path& quad_folder,
         }
 
         ++patch_idx;
+    }
+}
+
+void debug_convert_resampled(const std::filesystem::path& resampled_dir, const std::filesystem::path& output_dir,
+    const ResamplerConfig& config)
+{
+    ScopedTimer timer("debug resampled output");
+
+    for (const auto& entry : std::filesystem::directory_iterator(resampled_dir))
+    {
+        std::vector<std::array<float, 3>> data{file_size(entry.path()) / sizeof(data[0])};
+        {
+            std::ifstream input{entry.path(), std::ios_base::binary};
+            input.read(reinterpret_cast<char*>(data.data()), data.size() * sizeof(data[0]));
+        }
+
+        std::array<float, 3> min{data.front()[0], data.front()[1], data.front()[2]};
+        std::array<float, 3> max = min;
+        for (const auto& pixel : data)
+        {
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                min[i] = std::min(min[i], pixel[i]);
+                max[i] = std::max(max[i], pixel[i]);
+            }
+        }
+
+        std::vector<std::array<uint8_t, 3>> converted{data.size()};
+        for (std::size_t i = 0; i < data.size(); ++i)
+        {
+            for (std::size_t j = 0; j < 3; ++j)
+            {
+                converted[i][j] = uint8_t(255 * (data[i][j] - min[j]) / (max[j] - min[j]));
+            }
+        }
+
+        std::ofstream output
+            {output_dir / (entry.path().filename().string() + ".ppm"), std::ios_base::binary};
+        output << "P6\n" << config.frequency << "\n" << config.frequency << "\n" << 255 << "\n";
+        output.write(reinterpret_cast<const char*>(converted.data()), converted.size() * sizeof(converted[0]));
     }
 }

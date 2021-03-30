@@ -26,8 +26,14 @@ std::vector<char> read_shader(std::string_view name)
 
 struct Vertex
 {
-    MappingCoords mapping_position;
-    HashableCoords position;
+    struct Mapped
+    {
+        float m_x, m_y;
+    } mapped;
+    struct Position
+    {
+        float x, y, z;
+    } position;
 };
 
 constexpr vk::VertexInputBindingDescription vertex_input_binding_description
@@ -35,14 +41,15 @@ constexpr vk::VertexInputBindingDescription vertex_input_binding_description
 
 constexpr std::array vertex_input_attribute_descriptions{
     vk::VertexInputAttributeDescription
-        {/* binding */ 0, /* location */ 0, vk::Format::eR64G64Sfloat, offsetof(Vertex, mapping_position)},
+        {/* location */ 0, /* binding */ 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, mapped)},
     vk::VertexInputAttributeDescription
-        {/* binding */ 0, /* location */ 2, vk::Format::eR64G64B64Sfloat, offsetof(Vertex, position)}
+        {/* location */ 1, /* binding */ 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)}
 };
-
 
 Resampler::Resampler(const ResamplerConfig& config)
 {
+    resampling_frequency = uint32_t(config.frequency);
+
     if constexpr (!VALIDATION_LAYERS.empty())
     {
         auto layers = vk::enumerateInstanceLayerProperties();
@@ -105,45 +112,12 @@ Resampler::Resampler(const ResamplerConfig& config)
     }
 
 
-    command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
-        {}, uint32_t(queue_idx)
-    });
+    command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{{}, uint32_t(queue_idx)});
 
-    BuildPipeline(config);
-
-    auto command_buffers = device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
-        command_pool.get(), vk::CommandBufferLevel::ePrimary, uint32_t(config.thread_count)});
-
-    for (std::size_t idx = 0; idx < config.thread_count; ++idx)
-    {
-        per_thread_datum[idx].command_buffer = std::move(command_buffers[idx]);
-    }
-
-    vk::ClearValue clear_value{std::array{0.f, 0.f, 0.f, 0.f}};
-
-    for (auto& data : per_thread_datum)
-    {
-        auto& cb = data.command_buffer;
-
-        cb->begin(vk::CommandBufferBeginInfo{});
-
-        cb->beginRenderPass(vk::RenderPassBeginInfo{
-            render_pass.get(), data.framebuffer.get(),
-            vk::Rect2D{{0, 0}, {uint32_t(config.frequency), uint32_t(config.frequency)}},
-            1, &clear_value
-        }, vk::SubpassContents::eInline);
-
-        cb->bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline.get());
-
-        cb->draw(3, 1, 0, 0);
-
-        cb->endRenderPass();
-
-        cb->end();
-    }
+    build_pipeline(config);
 }
 
-void Resampler::BuildPipeline(const ResamplerConfig& config)
+void Resampler::build_pipeline(const ResamplerConfig& config)
 {
     auto create_shader_module = [this]
         (const std::vector<char>& source)
@@ -155,14 +129,13 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
     auto vert_source = read_shader("resampling.vert");
     auto vert_module = create_shader_module(vert_source);
     vk::PipelineShaderStageCreateInfo vert_info
-        {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "resampling"};
+        {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"};
 
-    device->destroy(vert_module.get());
 
     auto frag_source = read_shader("resampling.frag");
     auto frag_module = create_shader_module(frag_source);
     vk::PipelineShaderStageCreateInfo frag_info
-        {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "resampling"};
+        {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"};
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{vert_info, frag_info};
 
@@ -174,14 +147,28 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly_info{{}, vk::PrimitiveTopology::eTriangleList, false};
 
-    vk::Viewport viewport{0, 0, float(config.frequency), float(config.frequency), 0, 1};
-    vk::Rect2D scissor{{0, 0}, {uint32_t(config.frequency), uint32_t(config.frequency)}};
+    vk::Viewport viewport{0, 0, float(resampling_frequency), float(resampling_frequency), 0, 1};
+    vk::Rect2D scissor{{0, 0}, {resampling_frequency, resampling_frequency}};
 
     vk::PipelineViewportStateCreateInfo viewport_info{{}, 1, &viewport, 1, &scissor};
 
-    vk::PipelineRasterizationStateCreateInfo rasterizer_info
-        {{}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise,
-         false, 0, 0, 0, 1};
+    vk::PipelineRasterizationStateCreateInfo rasterizer_info{
+        {},
+        /* depth clamp */ false,
+        /* rasterizer discard */ false,
+        vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise,
+        /* depth bias */ false, 0, 0, 0,
+        /* line width */ 1
+    };
+
+    vk::PipelineMultisampleStateCreateInfo multisample_info{
+        {},
+        vk::SampleCountFlagBits::e1,
+        /* sample shading */ false, 1.f,
+        /* sample mask */ nullptr,
+        /* alpha to coverage */ false,
+        /* alpha to one */ false
+    };
 
     vk::PipelineColorBlendAttachmentState color_blend_attachment_state
         {false,
@@ -199,7 +186,7 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
     auto pipeline_layout = device->createPipelineLayoutUnique(pipeline_layout_create_info);
 
     vk::AttachmentDescription attachment_description
-        {{}, vk::Format::eA8B8G8R8SrgbPack32, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+        {{}, OUTPUT_FORMAT, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
          vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
          vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR};
 
@@ -212,39 +199,41 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
 
     render_pass = device->createRenderPassUnique(render_pass_create_info);
 
-    vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info
-        {{}, 2, shader_stages.data(),
-         &vertex_input_info,
-         &input_assembly_info,
-         nullptr,
-         &viewport_info,
-         &rasterizer_info,
-         nullptr,
-         nullptr,
-         &color_blend_state_create_info,
-         nullptr,
-         pipeline_layout.get(),
-         render_pass.get(),
-         0,
-         {},
-         -1};
+    graphics_pipeline = device->createGraphicsPipelineUnique({}, vk::GraphicsPipelineCreateInfo{
+        {}, 2, shader_stages.data(),
+        &vertex_input_info,
+        &input_assembly_info,
+        nullptr,
+        &viewport_info,
+        &rasterizer_info,
+        &multisample_info,
+        nullptr,
+        &color_blend_state_create_info,
+        nullptr,
+        pipeline_layout.get(),
+        render_pass.get(),
+        0,
+        {},
+        -1
+    });
 
     for (auto& data : per_thread_datum)
     {
         data.image = device->createImageUnique(vk::ImageCreateInfo{
             {}, vk::ImageType::e2D, OUTPUT_FORMAT,
-            /* extents */ {uint32_t(config.frequency), uint32_t(config.frequency), 1},
+            /* extents */ {resampling_frequency, resampling_frequency, 1},
             /* mip levels */ 1, /* array layers */ 1, vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eColorAttachment
+            vk::ImageTiling::eLinear, vk::ImageUsageFlagBits::eColorAttachment
         });
 
-        auto requirements = device->getImageMemoryRequirements(data.image.get());
-        auto memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
-            requirements.size,
-            0 // TODO: figure this out
+        auto mem_reqs = device->getImageMemoryRequirements(data.image.get());
+        data.image_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
+            mem_reqs.size,
+            find_memory_type(mem_reqs.memoryTypeBits,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
         });
 
-        device->bindImageMemory(data.image.get(), memory.get(), 0);
+        device->bindImageMemory(data.image.get(), data.image_memory.get(), 0);
 
         data.image_view = device->createImageViewUnique(vk::ImageViewCreateInfo{
             {}, data.image.get(), vk::ImageViewType::e2D, OUTPUT_FORMAT, {},
@@ -257,7 +246,7 @@ void Resampler::BuildPipeline(const ResamplerConfig& config)
 
         data.framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
             {}, render_pass.get(), /* attachment count */ 1, &data.image_view.get(),
-            uint32_t(config.frequency), uint32_t(config.frequency), /* layers */ 1
+            resampling_frequency, resampling_frequency, /* layers */ 1
         });
     }
 }
@@ -284,23 +273,45 @@ std::vector<Vertex> read_vertex_data(const std::filesystem::path& quad, const st
         auto verts = triangle_verts(tri);
         for (auto v : verts)
         {
-            result.push_back({mapping[v], v});
+            const auto&[m_x, m_y] = mapping[v];
+            const auto&[x, y, z] = v;
+            result.push_back({{float(m_x), float(m_y)}, {float(x), float(y), float(z)}});
         }
     }
 
     return result;
 }
 
-void Resampler::Resample(const std::filesystem::path& quad, const std::filesystem::path& info,
+void Resampler::resample(const std::filesystem::path& quad, const std::filesystem::path& info_dir,
     const std::filesystem::path& output_dir, std::size_t thread_idx)
 {
-    auto vertices = read_vertex_data(quad, info);
+    auto vertices = read_vertex_data(quad, info_dir / quad.filename());
 
     auto& data = per_thread_datum[thread_idx];
 
-    auto vertex_buffer = device->createBufferUnique(vk::BufferCreateInfo{
+    device->resetFences({data.rendered_fence.get()});
 
+    auto vertex_buffer = device->createBufferUnique(vk::BufferCreateInfo{
+        {}, sizeof(vertices[0]) * vertices.size(),
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::SharingMode::eExclusive
     });
+
+    auto memory_requirements = device->getBufferMemoryRequirements(vertex_buffer.get());
+    auto vertex_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
+        memory_requirements.size,
+        find_memory_type(memory_requirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    });
+
+    device->bindBufferMemory(vertex_buffer.get(), vertex_memory.get(), 0);
+
+    void* mapped_data;
+    device->mapMemory(vertex_memory.get(), 0, memory_requirements.size, {}, &mapped_data);
+    std::memcpy(mapped_data, vertices.data(), sizeof(vertices[0]) * vertices.size());
+    device->unmapMemory(vertex_memory.get());
+
+    build_command_buffer(vertex_buffer.get(), vertices.size(), thread_idx);
 
     vk::SubmitInfo submit_info{
         /* wait semaphores */ 0, nullptr, nullptr,
@@ -313,4 +324,79 @@ void Resampler::Resample(const std::filesystem::path& quad, const std::filesyste
     {
         throw std::runtime_error("Resampling didnt succeed!");
     }
+
+    auto layout = device->getImageSubresourceLayout(data.image.get(),
+        vk::ImageSubresource{vk::ImageAspectFlagBits::eColor});
+
+    const char* current_byte;
+    device->mapMemory(data.image_memory.get(), 0, layout.size, {},
+        reinterpret_cast<void**>(const_cast<char**>(&current_byte)));
+
+    current_byte += layout.offset;
+
+    {
+        std::ofstream result(output_dir / quad.filename(), std::ios_base::binary);
+
+        for (std::size_t y = 0; y < resampling_frequency; ++y)
+        {
+            const char* current =  current_byte;
+            for (std::size_t x = 0; x < resampling_frequency; ++x)
+            {
+                result.write(current, 3*sizeof(float));
+                // skip alpha
+                current += 4*sizeof(float);
+            }
+            current_byte += layout.rowPitch;
+        }
+    }
+
+    device->unmapMemory(data.image_memory.get());
+
+
+    vertex_buffer.reset();
+}
+
+uint32_t Resampler::find_memory_type(uint32_t typeFilter, const vk::MemoryPropertyFlags& flags) const
+{
+    auto properties = physical_device.getMemoryProperties();
+
+    for (uint32_t i = 0; i < properties.memoryTypeCount; ++i)
+    {
+        if (typeFilter & (1 << i)
+            && (properties.memoryTypes[i].propertyFlags & flags) == flags)
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Couldn't find an appropriate image_memory type!");
+}
+
+void Resampler::build_command_buffer(vk::Buffer vertex_buffer, std::size_t vertex_count, std::size_t thread_idx)
+{
+    vk::ClearValue clear_value{std::array{0.f, 0.f, 0.f, 0.f}};
+
+    auto& data = per_thread_datum[thread_idx];
+    auto& cb = data.command_buffer;
+
+    cb = std::move(device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
+        command_pool.get(), vk::CommandBufferLevel::ePrimary, 1}).front());
+
+    cb->begin(vk::CommandBufferBeginInfo{});
+
+    cb->beginRenderPass(vk::RenderPassBeginInfo{
+        render_pass.get(), data.framebuffer.get(),
+        vk::Rect2D{{0, 0}, {resampling_frequency, resampling_frequency}},
+        1, &clear_value
+    }, vk::SubpassContents::eInline);
+
+    cb->bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline.get());
+
+    cb->bindVertexBuffers(0, {vertex_buffer}, {0});
+
+    cb->draw(vertex_count, 1, 0, 0);
+
+    cb->endRenderPass();
+
+    cb->end();
 }

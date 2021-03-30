@@ -174,7 +174,7 @@ FloatingNumber total_stretch_L2(const SurfaceGraph& graph, const std::vector<Vec
         denominator += area;
         numerator += stretch_squared * area;
     }
-    return sqrt(numerator / denominator);
+    return std::sqrt(numerator / denominator);
 }
 
 void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& triangles_adjacent_to_vert,
@@ -183,21 +183,27 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
 {
     std::vector<bool> original_triangle_orientations;
     original_triangle_orientations.resize(triangles.size());
+    FloatingNumber normalization_constant = 0;
     for (std::size_t idx = 0; idx < triangles.size(); ++idx)
     {
         original_triangle_orientations[idx] = triangle_orientation(graph, triangles, mapping, idx);
+        auto[a, b, c] = to_eigen(triangle_verts(triangles[idx]));
+        normalization_constant += (b - a).cross(c - a).norm();
     }
+    normalization_constant = std::sqrt(normalization_constant);
 
 
     std::vector<std::size_t> iota{triangles.size()};
     std::iota(iota.begin(), iota.end(), 0);
 
     auto neighborhood_stretch_L2 =
-        [&graph, &triangles, &triangles_adjacent_to_vert, &mapping, &original_triangle_orientations]
+        [&graph, &triangles, &triangles_adjacent_to_vert, &mapping, &original_triangle_orientations,
+         &normalization_constant]
         (std::size_t idx)
         {
             return total_stretch_L2(graph, mapping, triangles, original_triangle_orientations,
-                triangles_adjacent_to_vert[idx].begin(), triangles_adjacent_to_vert[idx].end());
+                triangles_adjacent_to_vert[idx].begin(), triangles_adjacent_to_vert[idx].end())
+                    / normalization_constant;
         };
 
     std::vector<std::pair<FloatingNumber, size_t>> optimization_order;
@@ -211,8 +217,12 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
     }
     std::sort(optimization_order.begin(), optimization_order.end(), std::greater{});
 
+    FloatingNumber root_of_vert_count = std::sqrt(graph.vertex_count());
+
     for (size_t i = 1; i <= config.max_iterations; ++i)
     {
+        const auto search_extents = FloatingNumber{1}/i/root_of_vert_count;
+
         FloatingNumber error_change = 0;
         for (auto&[stretch, idx] : optimization_order)
         {
@@ -222,8 +232,8 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
 
             Vector2 old = mapping[idx];
 
-            FloatingNumber left = -FloatingNumber{1}/i;
-            FloatingNumber right = FloatingNumber{1}/i;
+            FloatingNumber left = -search_extents;
+            FloatingNumber right = search_extents;
             while (right - left > 1e-1/i)
             {
                 FloatingNumber onethird = std::lerp(left, right, FloatingNumber{1}/3);
@@ -250,13 +260,23 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
                 }
             }
 
-            auto new_stretch = neighborhood_stretch_L2(idx);
             mapping[idx] = old + std::midpoint(left, right) * direction;
-            error_change += (stretch - new_stretch)*(stretch - new_stretch);
-            stretch = new_stretch;
+            auto new_stretch = neighborhood_stretch_L2(idx);
+            // If we are already exactly in the minimum point, result of ternary search won't be
+            // better than our previous result
+            if (new_stretch < stretch)
+            {
+                error_change += (stretch - new_stretch)*(stretch - new_stretch);
+                stretch = new_stretch;
+            }
+            else
+            {
+                mapping[idx] = old;
+            }
         }
 
-        if (error_change < config.average_local_stretch_difference_threshold)
+        auto tsh = config.average_local_stretch_difference_threshold;
+        if (error_change / optimization_order.size() < tsh*tsh)
         {
             break;
         }

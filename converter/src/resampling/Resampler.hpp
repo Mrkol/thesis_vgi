@@ -22,11 +22,13 @@ class Resampler
 public:
     explicit Resampler(const ResamplerConfig& config);
 
-    void Resample(const std::filesystem::path& quad, const std::filesystem::path& info,
+    void resample(const std::filesystem::path& quad, const std::filesystem::path& info_dir,
         const std::filesystem::path& output_dir, std::size_t thread_idx);
 
 private:
-    void BuildPipeline(const ResamplerConfig& config);
+    void build_pipeline(const ResamplerConfig& config);
+    [[nodiscard]] uint32_t find_memory_type(uint32_t typeFilter, const vk::MemoryPropertyFlags& flags) const;
+    void build_command_buffer(vk::Buffer vertex_buffer, std::size_t vertex_count, std::size_t thread_idx);
 
 private:
     struct PerThreadData
@@ -34,9 +36,9 @@ private:
         vk::Queue queue;
 
         // Order of those fields is important due to destruction order!
+        vk::UniqueDeviceMemory image_memory;
         vk::UniqueImage image;
         vk::UniqueImageView image_view;
-        vk::UniqueDeviceMemory memory;
         vk::UniqueFramebuffer framebuffer;
 
         vk::UniqueCommandBuffer command_buffer;
@@ -44,15 +46,17 @@ private:
         vk::UniqueFence rendered_fence;
     };
 
-    static constexpr vk::Format OUTPUT_FORMAT = vk::Format::eA8B8G8R8SrgbPack32;
+    static constexpr vk::Format OUTPUT_FORMAT = vk::Format::eR32G32B32A32Sfloat;
 
 private:
     vk::UniqueInstance vk_instance;
     vk::PhysicalDevice physical_device;
     vk::UniqueDevice device;
 
+    uint32_t resampling_frequency;
+
     vk::UniqueRenderPass render_pass;
     vk::UniquePipeline graphics_pipeline;
-    std::vector<PerThreadData> per_thread_datum;
     vk::UniqueCommandPool command_pool;
+    std::vector<PerThreadData> per_thread_datum;
 };

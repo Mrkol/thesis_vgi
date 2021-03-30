@@ -25,14 +25,14 @@ int main(int argc, char** argv)
             cxxopts::value<FloatingNumber>()->default_value("0"))
         ("clustering-irregularity-difference-weight", "Weight for irregularity difference in the clustering metric",
             cxxopts::value<FloatingNumber>()->default_value("1.7"))
-        ("clustering-max-memory", "Memory limit for clustering (in bytes)",
+        ("clustering-max-image_memory", "Memory limit for clustering (in bytes)",
             cxxopts::value<std::size_t>()->default_value("104857600"))
         ("parametrization-uniform-springs-rate", "Learning rate for gradient descent in uniform springs",
             cxxopts::value<FloatingNumber>()->default_value("1e-2"))
         ("parametrization-uniform-gradient-threshold", "Stopping threshold for uniform springs",
             cxxopts::value<FloatingNumber>()->default_value("1e-4"))
         ("parametrization-l2-stretch-threshold", "Stopping threshold for L2 stretch optimizer",
-            cxxopts::value<FloatingNumber>()->default_value("1e-6"))
+            cxxopts::value<FloatingNumber>()->default_value("1e-2"))
         ("parametrization-l2-stretch-max-iterations", "Max iterations for the L2 stretch optimizer",
             cxxopts::value<std::size_t>()->default_value("100"))
         ("h,help", "Print usage")
@@ -57,7 +57,7 @@ int main(int argc, char** argv)
         parsed["clustering-irregularity-difference-weight"].as<FloatingNumber>(),
         parsed["clustering-irregularity-weight"].as<FloatingNumber>(),
     };
-    std::size_t memory_limit = parsed["clustering-max-memory"].as<std::size_t>();
+    std::size_t memory_limit = parsed["clustering-max-image_memory"].as<std::size_t>();
 
     ParametrizationConfig parametrization_config
     {
@@ -71,6 +71,8 @@ int main(int argc, char** argv)
         }
     };
 
+    ResamplerConfig resampler_config{1};
+
     auto workdir = output / "work";
     create_directory(workdir);
 
@@ -81,8 +83,9 @@ int main(int argc, char** argv)
         obj_to_plain(input, plainfile, workdir);
     }
 
-    process_plain(plainfile, workdir, clustering_metric_config, memory_limit, clustering_error_threshold,
-        parametrization_config);
+    process_plain(plainfile, workdir, output,
+        clustering_metric_config, memory_limit, clustering_error_threshold,
+        parametrization_config, resampler_config);
 
     return 0;
 }
