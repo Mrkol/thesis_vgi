@@ -111,14 +111,14 @@ FloatingNumber after_merge_error(const Patch& first, const Patch& second, const 
     FloatingNumber pe = (plane.transpose()*plan_quad*plane).value() / vertex_count;
     FloatingNumber oe = (plane_normal.transpose()*orient_quad*plane_normal).value() / area;
     FloatingNumber se = (gamma - std::max(gamma1, gamma2))/gamma;
-    FloatingNumber ce = irregularity(perimeter, area);
+    FloatingNumber ce = perimeter*perimeter;
 
     return (config.planarity_weight * pe
         + config.orientation_weight * oe
         + config.irregularity_change_weight * se
-        + config.irregularity_weight * ce)
+        + config.compactness_weight * ce)
             / (config.planarity_weight + config.orientation_weight
-                + config.irregularity_change_weight + config.irregularity_weight);
+                + config.irregularity_change_weight + config.compactness_weight);
 }
 
 bool merge_preserve_topological_invariants(std::size_t first, std::size_t second,

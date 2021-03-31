@@ -13,7 +13,7 @@ struct ClusteringMetricConfig
     // This might not work, I dunno
     FloatingNumber orientation_weight = 1;
     FloatingNumber irregularity_change_weight = 1;
-    FloatingNumber irregularity_weight = 1;
+    FloatingNumber compactness_weight = 1;
 };
 
 struct ClusteringConfig

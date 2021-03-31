@@ -21,8 +21,8 @@ int main(int argc, char** argv)
             cxxopts::value<FloatingNumber>()->default_value("1"))
         ("clustering-orientation-weight", "Weight for orientation error in the clustering metric",
             cxxopts::value<FloatingNumber>()->default_value("0"))
-        ("clustering-irregularity-weight", "Weight for irregularity error in the clustering metric",
-            cxxopts::value<FloatingNumber>()->default_value("0"))
+        ("clustering-compactness-weight", "Weight for compactness error in the clustering metric",
+            cxxopts::value<FloatingNumber>()->default_value("1e-4"))
         ("clustering-irregularity-difference-weight", "Weight for irregularity difference in the clustering metric",
             cxxopts::value<FloatingNumber>()->default_value("1.7"))
         ("clustering-max-image_memory", "Memory limit for clustering (in bytes)",
@@ -55,7 +55,7 @@ int main(int argc, char** argv)
         parsed["clustering-planarity-weight"].as<FloatingNumber>(),
         parsed["clustering-orientation-weight"].as<FloatingNumber>(),
         parsed["clustering-irregularity-difference-weight"].as<FloatingNumber>(),
-        parsed["clustering-irregularity-weight"].as<FloatingNumber>(),
+        parsed["clustering-compactness-weight"].as<FloatingNumber>(),
     };
     std::size_t memory_limit = parsed["clustering-max-image_memory"].as<std::size_t>();
 
