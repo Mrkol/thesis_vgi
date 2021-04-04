@@ -35,6 +35,10 @@ int main(int argc, char** argv)
             cxxopts::value<FloatingNumber>()->default_value("1e-2"))
         ("parametrization-l2-stretch-max-iterations", "Max iterations for the L2 stretch optimizer",
             cxxopts::value<std::size_t>()->default_value("100"))
+        ("resampling-resolution", "Resampled texture resolution",
+            cxxopts::value<std::size_t>()->default_value("128"))
+        ("resampling-thread-count", "Render resampled textures concurrently with this amount of threads",
+            cxxopts::value<std::size_t>()->default_value("1"))
         ("h,help", "Print usage")
         ;
 
@@ -71,7 +75,10 @@ int main(int argc, char** argv)
         }
     };
 
-    ResamplerConfig resampler_config{1};
+    ResamplerConfig resampler_config{
+        parsed["resampling-thread-count"].as<std::size_t>(),
+        parsed["resampling-resolution"].as<std::size_t>()
+    };
 
     auto workdir = output / "work";
     create_directory(workdir);

@@ -27,8 +27,8 @@ public:
 
 private:
     void build_pipeline(const ResamplerConfig& config);
-    [[nodiscard]] uint32_t find_memory_type(uint32_t typeFilter, const vk::MemoryPropertyFlags& flags) const;
-    void build_command_buffer(vk::Buffer vertex_buffer, std::size_t vertex_count, std::size_t thread_idx);
+    void build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,
+        std::size_t triangle_indices_count, std::size_t line_indices_count, std::size_t thread_idx);
 
 private:
     struct PerThreadData
@@ -55,8 +55,17 @@ private:
 
     uint32_t resampling_frequency;
 
+    vk::UniqueDeviceMemory  uniform_buffer_memory;
+    vk::UniqueBuffer uniform_buffer;
+
+    vk::UniqueDescriptorPool descriptor_pool;
+    vk::DescriptorSet descriptor_set;
+
     vk::UniqueRenderPass render_pass;
-    vk::UniquePipeline graphics_pipeline;
+    vk::UniquePipelineLayout pipeline_layout;
+    vk::UniquePipeline triangle_pipeline;
+    vk::UniquePipeline line_pipeline;
+
     vk::UniqueCommandPool command_pool;
     std::vector<PerThreadData> per_thread_datum;
 };

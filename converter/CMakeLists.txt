@@ -8,7 +8,7 @@ find_package(Threads REQUIRED)
 
 option(CHECKS "Enables slow consistency checks" OFF)
 
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
 if (CHECKS)
     add_definitions(-DCLUSTERING_CONSISTENCY_CHECKS)
