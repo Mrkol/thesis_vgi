@@ -28,7 +28,7 @@ public:
 private:
     void build_pipeline(const ResamplerConfig& config);
     void build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,
-        std::size_t triangle_indices_count, std::size_t line_indices_count, std::size_t thread_idx);
+        uint32_t triangle_indices_count, uint32_t line_indices_count, std::size_t thread_idx);
 
 private:
     struct PerThreadData

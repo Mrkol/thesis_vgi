@@ -288,7 +288,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         0,
         {},
         -1
-    });
+    }).value;
 
 
     vk::PipelineInputAssemblyStateCreateInfo line_input_assembly_info{
@@ -311,7 +311,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         0,
         {},
         -1
-    });
+    }).value;
 
     {
         uniform_buffer = device->createBufferUnique(vk::BufferCreateInfo{
@@ -335,7 +335,10 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         };
 
         void* mapped_data;
-        device->mapMemory(uniform_buffer_memory.get(), 0, memory_requirements.size, {}, &mapped_data);
+        if (device->mapMemory(uniform_buffer_memory.get(), 0, memory_requirements.size, {}, &mapped_data) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("Unable to map buffer memory!");
+        }
         std::memcpy(mapped_data, &ubo, sizeof(ubo));
         device->unmapMemory(uniform_buffer_memory.get());
     }
@@ -347,7 +350,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
             {},
             /* max sets */ 1,
-            /* pool sizes */ pool_sizes.size(), pool_sizes.data()
+            /* pool sizes */ static_cast<uint32_t>(pool_sizes.size()), pool_sizes.data()
         });
 
         // Automatically destroyed with the pool
@@ -481,7 +484,10 @@ BufferAndMemory make_buffer(const vk::PhysicalDevice& physical_device, vk::Devic
     device->bindBufferMemory(buffer.get(), memory.get(), 0);
 
     void* mapped_data;
-    device->mapMemory(memory.get(), 0, memory_requirements.size, {}, &mapped_data);
+    if (device->mapMemory(memory.get(), 0, memory_requirements.size, {}, &mapped_data) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Unable to map buffer memory!");
+    }
     std::memcpy(mapped_data, data.data(), sizeof(data[0]) * data.size());
     device->unmapMemory(memory.get());
 
@@ -511,7 +517,7 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
 
 
     build_command_buffer(vertex_buffer.get(), triangle_buffer.get(), line_buffer.get(),
-        triangles.size(), line_strip.size(), thread_idx);
+        static_cast<uint32_t>(triangles.size()), static_cast<uint32_t>(line_strip.size()), thread_idx);
 
     vk::SubmitInfo submit_info{
         /* wait semaphores */ 0, nullptr, nullptr,
@@ -529,8 +535,11 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
         vk::ImageSubresource{vk::ImageAspectFlagBits::eColor});
 
     const char* current_byte;
-    device->mapMemory(data.image_memory.get(), 0, layout.size, {},
-        reinterpret_cast<void**>(const_cast<char**>(&current_byte)));
+    if (device->mapMemory(data.image_memory.get(), 0, layout.size, {},
+        reinterpret_cast<void**>(const_cast<char**>(&current_byte))) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Unable to map output buffer result!");
+    }
 
     current_byte += layout.offset;
 
@@ -554,7 +563,7 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
         // bottom right corner does not get rendered due to rasterization rules
         // this can be fixed with a teeeeny-tiny upscaling, but this might result in
         // seams due to interpolation :(
-        result.seekp(-3*sizeof(float), std::ios_base::seekdir::_S_cur);
+        result.seekp(-3*sizeof(float), std::ios_base::cur);
         std::size_t corner_idx = 0;
         while (vertices[line_strip[corner_idx]].mapped.m_y < 1)
         {
@@ -567,7 +576,7 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
 }
 
 void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,
-    std::size_t triangle_indices_count, std::size_t line_indices_count, std::size_t thread_idx)
+    uint32_t triangle_indices_count, uint32_t line_indices_count, std::size_t thread_idx)
 {
     vk::ClearValue clear_value{std::array{0.f, 0.f, 0.f, 0.f}};
 
