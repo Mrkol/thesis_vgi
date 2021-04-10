@@ -70,7 +70,7 @@ uint32_t find_memory_type(const vk::PhysicalDevice& physical_device,
 
 Resampler::Resampler(const ResamplerConfig& config)
 {
-    resampling_frequency = uint32_t(config.frequency);
+    resampling_resolution = (1 << uint32_t(config.log_resolution)) + 1;
 
     if constexpr (!VALIDATION_LAYERS.empty())
     {
@@ -142,7 +142,7 @@ Resampler::Resampler(const ResamplerConfig& config)
     {
         data.image = device->createImageUnique(vk::ImageCreateInfo{
             {}, vk::ImageType::e2D, OUTPUT_FORMAT,
-            /* extents */ {resampling_frequency, resampling_frequency, 1},
+            /* extents */ {resampling_resolution, resampling_resolution, 1},
             /* mip levels */ 1, /* array layers */ 1, vk::SampleCountFlagBits::e1,
             vk::ImageTiling::eLinear, vk::ImageUsageFlagBits::eColorAttachment
         });
@@ -167,7 +167,7 @@ Resampler::Resampler(const ResamplerConfig& config)
 
         data.framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
             {}, render_pass.get(), /* attachment count */ 1, &data.image_view.get(),
-            resampling_frequency, resampling_frequency, /* layers */ 1
+            resampling_resolution, resampling_resolution, /* layers */ 1
         });
     }
 }
@@ -204,9 +204,9 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         {}, vk::PrimitiveTopology::eTriangleList, false
     };
 
-    vk::Viewport viewport{0, 0, float(resampling_frequency), float(resampling_frequency), 0, 1};
-    vk::Rect2D scissor{{0,                    0},
-                       {resampling_frequency, resampling_frequency}};
+    vk::Viewport viewport{0, 0, float(resampling_resolution), float(resampling_resolution), 0, 1};
+    vk::Rect2D scissor{{0,                     0},
+                       {resampling_resolution, resampling_resolution}};
 
     vk::PipelineViewportStateCreateInfo viewport_info{{}, 1, &viewport, 1, &scissor};
 
@@ -331,7 +331,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         device->bindBufferMemory(uniform_buffer.get(), uniform_buffer_memory.get(), 0);
 
         UniformBufferObject ubo{
-            float(resampling_frequency - 1) / resampling_frequency
+            float(resampling_resolution - 1) / resampling_resolution
         };
 
         void* mapped_data;
@@ -546,10 +546,10 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
     {
         std::ofstream result(output_dir / quad.filename(), std::ios_base::binary);
 
-        for (std::size_t y = 0; y < resampling_frequency; ++y)
+        for (std::size_t y = 0; y < resampling_resolution; ++y)
         {
             const char* current =  current_byte;
-            for (std::size_t x = 0; x < resampling_frequency; ++x)
+            for (std::size_t x = 0; x < resampling_resolution; ++x)
             {
                 result.write(current, 3*sizeof(float));
                 // skip alpha
@@ -590,7 +590,7 @@ void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triang
 
     cb->beginRenderPass(vk::RenderPassBeginInfo{
         render_pass.get(), data.framebuffer.get(),
-        vk::Rect2D{{0, 0}, {resampling_frequency, resampling_frequency}},
+        vk::Rect2D{{0, 0}, {resampling_resolution, resampling_resolution}},
         1, &clear_value
     }, vk::SubpassContents::eInline);
 

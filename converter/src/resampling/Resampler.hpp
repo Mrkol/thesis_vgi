@@ -14,7 +14,7 @@ constexpr std::array VALIDATION_LAYERS {"VK_LAYER_KHRONOS_validation"};
 struct ResamplerConfig
 {
     std::size_t thread_count{0};
-    std::size_t frequency = 1024;
+    std::size_t log_resolution = 7;
 };
 
 class Resampler
@@ -53,7 +53,7 @@ private:
     vk::PhysicalDevice physical_device;
     vk::UniqueDevice device;
 
-    uint32_t resampling_frequency;
+    uint32_t resampling_resolution;
 
     vk::UniqueDeviceMemory  uniform_buffer_memory;
     vk::UniqueBuffer uniform_buffer;

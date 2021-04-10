@@ -297,7 +297,7 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
 
         std::ofstream output
             {output_dir / (entry.path().filename().string() + ".ppm"), std::ios_base::binary};
-        output << "P6\n" << config.frequency << "\n" << config.frequency << "\n" << 255 << "\n";
+        output << "P6\n" << config.log_resolution << "\n" << config.log_resolution << "\n" << 255 << "\n";
         output.write(reinterpret_cast<const char*>(converted.data()), converted.size() * sizeof(converted[0]));
     }
 }
