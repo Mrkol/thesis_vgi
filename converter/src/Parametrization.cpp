@@ -221,7 +221,7 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
 
     for (size_t i = 1; i <= config.max_iterations; ++i)
     {
-        const auto search_extents = FloatingNumber{1}/i/root_of_vert_count;
+        const auto search_extents = 1/static_cast<FloatingNumber>(i)/root_of_vert_count;
 
         FloatingNumber error_change = 0;
         for (auto&[stretch, idx] : optimization_order)
@@ -234,7 +234,7 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
 
             FloatingNumber left = -search_extents;
             FloatingNumber right = search_extents;
-            while (right - left > 1e-1/i)
+            while (right - left > 1e-1/static_cast<FloatingNumber>(i))
             {
                 FloatingNumber onethird = std::lerp(left, right, FloatingNumber{1}/3);
                 mapping[idx] = old + onethird * direction;
@@ -276,7 +276,7 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
         }
 
         auto tsh = config.average_local_stretch_difference_threshold;
-        if (error_change / optimization_order.size() < tsh*tsh)
+        if (error_change / static_cast<FloatingNumber>(optimization_order.size()) < tsh*tsh)
         {
             break;
         }
@@ -285,17 +285,15 @@ void optimize_L2_stretch(const SurfaceGraph& graph, const AdjacentTriangles& tri
     }
 }
 
-void parametrize(const std::filesystem::path& patch, const std::filesystem::path& info_dir,
+std::vector<MappingElement> parametrize(const QuadPatch& patch,
     const ParametrizationConfig& config)
 {
-    auto triangles = read_plainfile(patch);
-
-    SurfaceGraph graph{triangles};
+    SurfaceGraph graph{patch.triangles};
     AdjacentTriangles triangles_adjacent_to_vert{graph.vertex_count()};
 
-    for (std::size_t idx = 0; idx < triangles.size(); ++idx)
+    for (std::size_t idx = 0; idx < patch.triangles.size(); ++idx)
     {
-        for (auto vert : triangle_verts(triangles[idx]))
+        for (auto vert : triangle_verts(patch.triangles[idx]))
         {
             triangles_adjacent_to_vert[graph.index_of(vert)].insert(idx);
         }
@@ -303,47 +301,31 @@ void parametrize(const std::filesystem::path& patch, const std::filesystem::path
 
     std::unordered_set<std::size_t> border_indices;
 
-    std::vector<Vector2> result;
-    result.resize(graph.vertex_count(), {0.5, 0.5});
-
+    for (auto& edge : patch.boundary)
     {
-        auto patch_info = info_dir / patch.filename();
-
-        std::array<std::vector<HashableCoords>, 4> edges;
+        for (auto& v : edge)
         {
-            std::ifstream info{patch_info, std::ios_base::binary};
-            for (auto& edge : edges)
-            {
-                edge = read_vector<HashableCoords>(info);
-
-                for (auto v : edge)
-                {
-                    border_indices.insert(graph.index_of(v));
-                }
-            }
+            border_indices.insert(graph.index_of(v));
         }
-
-        initialize_boundary(graph, edges, result);
-
-        remove(patch_info);
     }
 
-    optimize_uniform_springs(graph, border_indices, result,
+    std::vector<Vector2> mapping;
+    mapping.resize(graph.vertex_count(), {0.5, 0.5});
+
+    initialize_boundary(graph, patch.boundary, mapping);
+
+    optimize_uniform_springs(graph, border_indices, mapping,
         config.uniform_spring_optimizer_config);
 
-    optimize_L2_stretch(graph, triangles_adjacent_to_vert, triangles, border_indices, result,
+    optimize_L2_stretch(graph, triangles_adjacent_to_vert, patch.triangles, border_indices, mapping,
         config.stretch_optimizer_config);
 
 
+    std::vector<MappingElement> result{mapping.size()};
+    for (std::size_t i = 0; i < graph.vertex_count(); ++i)
     {
-        std::ofstream out{info_dir / patch.filename().string(), std::ios_base::binary};
-
-        for (std::size_t i = 0; i < graph.vertex_count(); ++i)
-        {
-            auto M = graph.coords(i);
-            MappingCoords m {result[i].x(), result[i].y()};
-            out.write(reinterpret_cast<char*>(&M), sizeof(M));
-            out.write(reinterpret_cast<char*>(&m), sizeof(m));
-        }
+        result[i].key = graph.coords(i);
+        result[i].value = {mapping[i].x(), mapping[i].y()};
     }
+    return result;
 }

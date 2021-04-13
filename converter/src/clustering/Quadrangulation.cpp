@@ -40,7 +40,6 @@ std::vector<FloatingNumber> generic_pathfinder(const SurfaceGraph& graph,  std::
             }
         }
 
-
         for (auto adjacent : graph.adjacent_to(current))
         {
             auto edge_length = graph.get_distance(current, adjacent);
@@ -196,7 +195,7 @@ std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_e
         current = find_center_recurse(graph, current);
     }
 
-    std::size_t naive_candidate = 0;
+    std::size_t naive_candidate;
     if (current.size() == 2)
     {
         naive_candidate = *median_point(graph, a_star(graph, current[0], current[1]));
@@ -280,8 +279,8 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceH
 
     // Split actual geometric data
     ThickVertex m_thick;
-    size_t first_prime_idx = Patch::NONE;
-    size_t second_prime_idx = Patch::NONE;
+    size_t first_prime_idx;
+    size_t second_prime_idx;
     {
         m_thick = midpoint(get_third(patch[first_idx], {a, v}), get_third(patch[first_idx], {a, u}));
 
@@ -682,33 +681,36 @@ std::vector<std::size_t> paint_quads(
     return triangle_colors;
 }
 
-void quadrangulate(const std::filesystem::path& patchfile, const std::filesystem::path& info_directory,
+template<class Iter>
+void copy_side(const SurfaceGraph& graph, std::vector<HashableCoords>& side, Iter beg, Iter end)
+{
+    side.reserve(std::distance(beg, end));
+    while (beg != end)
+    {
+        side.push_back(graph.coords(*beg));
+        ++beg;
+    }
+}
+
+std::vector<QuadPatch> quadrangulate(std::vector<ThickTriangle> triangles,
     std::size_t patch_idx, const ClusteringData& data)
 {
-    std::vector<ThickTriangle> patch;
-    patch.resize(file_size(patchfile) / sizeof(ThickTriangle));
-    {
-        std::ifstream input{patchfile, std::ios_base::binary};
-        input.read(reinterpret_cast<char*>(patch.data()), file_size(patchfile));
-    }
-
-    remove(patchfile);
-
-    SurfaceGraph graph{patch};
+    SurfaceGraph graph{triangles};
 
     SurfaceHashTable<FloatingNumber> dual_graph;
-    for (size_t idx = 0; idx < patch.size(); ++idx)
+    for (size_t idx = 0; idx < triangles.size(); ++idx)
     {
-        dual_graph.add({to_hashable_coords(patch[idx].a), to_hashable_coords(patch[idx].b)}, idx);
-        dual_graph.add({to_hashable_coords(patch[idx].b), to_hashable_coords(patch[idx].c)}, idx);
-        dual_graph.add({to_hashable_coords(patch[idx].c), to_hashable_coords(patch[idx].a)}, idx);
+        auto& tri = triangles[idx];
+        dual_graph.add({to_hashable_coords(tri.a), to_hashable_coords(tri.b)}, idx);
+        dual_graph.add({to_hashable_coords(tri.b), to_hashable_coords(tri.c)}, idx);
+        dual_graph.add({to_hashable_coords(tri.c), to_hashable_coords(tri.a)}, idx);
     }
 
     auto polygon_edges = find_polygon_edges(data, graph, patch_idx);
 
     auto center = find_center(graph, polygon_edges);
 
-    auto paths_to_midpoints = build_midpoint_paths(patch, graph, dual_graph, center, polygon_edges);
+    auto paths_to_midpoints = build_midpoint_paths(triangles, graph, dual_graph, center, polygon_edges);
 
     std::unordered_set<SymmetricEdge> banned;
     for (const auto& path : paths_to_midpoints)
@@ -728,55 +730,41 @@ void quadrangulate(const std::filesystem::path& patchfile, const std::filesystem
     // hack: starting edge corresponds to the previous patch
     std::rotate(starting_triangles.begin(), std::next(starting_triangles.begin()), starting_triangles.end());
 
-    auto colors = paint_quads(patch, dual_graph, starting_triangles, banned);
+    auto colors = paint_quads(triangles, dual_graph, starting_triangles, banned);
+
+    std::vector<QuadPatch> result{starting_triangles.size()};
 
     {
-        std::vector<std::ofstream> quads;
-        quads.reserve(starting_triangles.size());
-        for (std::size_t i = 0; i < starting_triangles.size(); ++i)
-        {
-            quads.emplace_back(patchfile.parent_path() / (patchfile.filename().string() + ":" + std::to_string(i)),
-                std::ios_base::binary);
-        }
-
-        for (std::size_t i = 0; i < patch.size(); ++i)
+        for (std::size_t i = 0; i < triangles.size(); ++i)
         {
             if (colors[i] == COLOR_NONE)
             {
                 continue;
             }
-            quads[colors[i]].write(reinterpret_cast<char*>(&(patch[i])), sizeof(patch[i]));
+            result[colors[i]].triangles.push_back(triangles[i]);
         }
     }
 
     for (std::size_t i = 0; i < starting_triangles.size(); ++i)
     {
-        auto path = info_directory / (patchfile.filename().string() + ":" + std::to_string(i));
-        std::ofstream out{path, std::ios_base::binary};
-
         std::size_t next = i + 1 == starting_triangles.size() ? 0 : i + 1;
 
-        auto transform = [&graph](std::size_t idx)
-            {
-                return graph.coords(idx);
-            };
-
         // from center to midpoint 1
-        write_range(out, paths_to_midpoints[i].begin(), paths_to_midpoints[i].end(), transform);
+        copy_side(graph, result[i].boundary[0], paths_to_midpoints[i].begin(), paths_to_midpoints[i].end());
 
         // from midpoint 1 to corner
         auto midpoint1_it = std::find(polygon_edges[i].begin(), polygon_edges[i].end(),
             paths_to_midpoints[i].back());
-        write_range(out, midpoint1_it, polygon_edges[i].end(), transform);
+        copy_side(graph, result[i].boundary[1], midpoint1_it, polygon_edges[i].end());
 
         // from corner to midpoint 2
         auto midpoint2_it = std::find(polygon_edges[next].begin(), polygon_edges[next].end(),
             paths_to_midpoints[next].back());
-        write_range(out, polygon_edges[next].begin(), std::next(midpoint2_it), transform);
+        copy_side(graph, result[i].boundary[2], polygon_edges[next].begin(), std::next(midpoint2_it));
 
         // from corner to center
-        write_range(out, paths_to_midpoints[next].rbegin(), paths_to_midpoints[next].rend(), transform);
+        copy_side(graph, result[i].boundary[3], paths_to_midpoints[next].rbegin(), paths_to_midpoints[next].rend());
     }
+
+    return result;
 }
-
-

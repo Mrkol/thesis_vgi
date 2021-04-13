@@ -49,15 +49,15 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                 memory_limit = memory_limit / cells.size()]
                 ()
                 {
-                    if (cells[i].filename() != BORDER_FILENAME)
+                    auto triangles = read_plainfile(cells[i]);
+                    if (cells[i].filename() == BORDER_FILENAME)
                     {
-                        datas[i] = incore_cluster(cells[i],
-                            metric_config, memory_limit, error_threshold / std::sqrt(cells.size()), 0.3);
+                        datas[i] = triangle_soup_to_clusters(triangles);
+                        return;
                     }
-                    else
-                    {
-                        datas[i] = triangle_soup_to_clusters(read_plainfile(cells[i]));
-                    }
+
+                    datas[i] = incore_cluster(triangles,
+                        metric_config, memory_limit, error_threshold / std::sqrt(cells.size()), 0.3);
                 });
         }
     }
@@ -119,12 +119,49 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                 [cell = entry.path(), &total_clustering_data, &quad_info_path]
                     ()
                 {
-                    quadrangulate(cell, quad_info_path, std::stoull(cell.filename()), total_clustering_data);
+                    auto quads = quadrangulate(read_plainfile(cell),
+                        std::stoull(cell.filename()), total_clustering_data);
+                    remove(cell);
+                    for (std::size_t i = 0; i < quads.size(); ++i)
+                    {
+                        auto& quad = quads[i];
+                        std::string name = cell.filename().string() + ":" + std::to_string(i);
+                        {
+                            std::ofstream quad_file{cell.parent_path() / name, std::ios_base::binary};
+                            quad_file.write(reinterpret_cast<const char*>(quad.triangles.data()),
+                                quad.triangles.size() * sizeof(quad.triangles[0]));
+                        }
+                        {
+                            std::ofstream info_file{quad_info_path / name, std::ios_base::binary};
+                            for (auto& edge : quad.boundary)
+                            {
+                                write_range(info_file, edge.begin(), edge.end());
+                            }
+                        }
+                    }
                 });
         }
     }
 
     debug_cluster_output(clusters_path, workdir / "quadrangulated");
+
+    auto read_quad = [](const std::filesystem::path& quad, const std::filesystem::path& info)
+        {
+            QuadPatch result;
+            result.triangles = read_plainfile(quad);
+            {
+                std::ifstream in{info, std::ios_base::binary};
+                for (auto& edge : result.boundary)
+                {
+                    edge = read_vector<HashableCoords>(in);
+                }
+            }
+            return result;
+        };
+
+    auto parametrization_dir = workdir / "parametrization";
+
+    create_directory(parametrization_dir);
 
     {
         ScopedTimer timer("parametrization");
@@ -132,9 +169,14 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
         {
             pool.submit(
-                [cell = entry.path(), &quad_info_path, &parametrization_config]()
+                [quad_path = entry.path(), &quad_info_path, &parametrization_config, &read_quad, &parametrization_dir]
+                ()
                 {
-                    parametrize(cell, quad_info_path, parametrization_config);
+                    auto quad = read_quad(quad_path, quad_info_path / quad_path.filename());
+                    auto result = parametrize(quad, parametrization_config);
+
+                    std::ofstream out{parametrization_dir / quad_path.filename(), std::ios_base::binary};
+                    write_range(out, result.begin(), result.end());
                 });
         }
     }
@@ -158,10 +200,21 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
 
         for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
         {
-            pool.submit([patch = entry.path(), &quad_info_path, &resampled_dir, &resampler]()
+            pool.submit(
+                [quad_path = entry.path(), &quad_info_path, &resampled_dir, &resampler,
+                 &read_quad, &parametrization_dir]
+                ()
                 {
-                    resampler.resample(patch, quad_info_path, resampled_dir,
-                        StaticThreadPool::current_thread_index());
+                    auto quad = read_quad(quad_path, quad_info_path / quad_path.filename());
+                    std::vector<MappingElement> mapping;
+                    {
+                        std::ifstream in{parametrization_dir / quad_path.filename(), std::ios_base::binary};
+                        mapping = read_vector<MappingElement>(in);
+                    }
+                    auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
+
+                    std::ofstream out{resampled_dir / quad_path.filename(), std::ios_base::binary};
+                    out.write(reinterpret_cast<const char*>(result.data()), result.size() * sizeof(result[0]));
                 });
         }
     }
@@ -221,12 +274,12 @@ void debug_parametrization_output(const std::filesystem::path& quad_folder,
         {
             auto info_path = quad_info_folder / entry.path().filename();
 
-            using MappingElement = std::pair<HashableCoords, std::tuple<FloatingNumber, FloatingNumber>>;
             std::vector<MappingElement> elements;
-            elements.resize(file_size(info_path) / sizeof(MappingElement));
 
-            std::ifstream info{info_path};
-            info.read(reinterpret_cast<char*>(elements.data()), file_size(info_path));
+            {
+                std::ifstream info{info_path};
+                elements = read_vector<MappingElement>(info);
+            }
 
             for (auto&[key, value] : elements)
             {
@@ -295,9 +348,11 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
             }
         }
 
+        auto res = (1 << config.log_resolution) + 1;
+
         std::ofstream output
             {output_dir / (entry.path().filename().string() + ".ppm"), std::ios_base::binary};
-        output << "P6\n" << config.log_resolution << "\n" << config.log_resolution << "\n" << 255 << "\n";
+        output << "P6\n" << res << "\n" << res << "\n" << 255 << "\n";
         output.write(reinterpret_cast<const char*>(converted.data()), converted.size() * sizeof(converted[0]));
     }
 }

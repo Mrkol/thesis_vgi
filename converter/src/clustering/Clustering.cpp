@@ -5,7 +5,6 @@
 #include <numbers>
 
 #include "../DisjointSetUnion.hpp"
-#include "../DebugException.hpp"
 #include "Clustering.hpp"
 
 

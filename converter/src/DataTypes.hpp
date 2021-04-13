@@ -118,15 +118,15 @@ inline std::vector<ThickTriangle> read_plainfile(const std::filesystem::path& pa
     return triangles;
 }
 
-template<class Iter, class Transform>
-void write_range(std::ostream& out, Iter begin, Iter end, const Transform& transform)
+template<class Iter>
+void write_range(std::ostream& out, Iter begin, Iter end)
 {
     std::size_t size = std::distance(begin, end);
     out.write(reinterpret_cast<const char*>(&size), sizeof(size));
     while (begin != end)
     {
-        auto transformed = transform(*begin++);
-        out.write(reinterpret_cast<const char*>(&transformed), sizeof(transformed));
+        auto element = *begin++;
+        out.write(reinterpret_cast<const char*>(&element), sizeof(element));
     }
 }
 

@@ -2,7 +2,7 @@
 
 #include <filesystem>
 #include "DataTypes.hpp"
-
+#include "clustering/Quadrangulation.hpp"
 
 struct StretchOptimizerConfig
 {
@@ -23,6 +23,11 @@ struct ParametrizationConfig
 
 };
 
-void parametrize(const std::filesystem::path& patch, const std::filesystem::path& info_dir,
-    const ParametrizationConfig& config);
+struct MappingElement
+{
+    HashableCoords key;
+    MappingCoords value;
+};
+
+std::vector<MappingElement> parametrize(const QuadPatch& patch, const ParametrizationConfig& config);
 

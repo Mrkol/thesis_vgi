@@ -136,7 +136,7 @@ Resampler::Resampler(const ResamplerConfig& config)
 
     command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{{}, uint32_t(queue_idx)});
 
-    build_pipeline(config);
+    build_pipeline();
 
     for (auto& data : per_thread_datum)
     {
@@ -172,7 +172,7 @@ Resampler::Resampler(const ResamplerConfig& config)
     }
 }
 
-void Resampler::build_pipeline(const ResamplerConfig& config)
+void Resampler::build_pipeline()
 {
     auto create_shader_module = [this]
         (const std::vector<char>& source)
@@ -288,7 +288,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         0,
         {},
         -1
-    }).value;
+    });
 
 
     vk::PipelineInputAssemblyStateCreateInfo line_input_assembly_info{
@@ -311,7 +311,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         0,
         {},
         -1
-    }).value;
+    });
 
     {
         uniform_buffer = device->createBufferUnique(vk::BufferCreateInfo{
@@ -331,7 +331,7 @@ void Resampler::build_pipeline(const ResamplerConfig& config)
         device->bindBufferMemory(uniform_buffer.get(), uniform_buffer_memory.get(), 0);
 
         UniformBufferObject ubo{
-            float(resampling_resolution - 1) / resampling_resolution
+            float(resampling_resolution - 1) / float(resampling_resolution)
         };
 
         void* mapped_data;
@@ -388,72 +388,45 @@ struct PatchVertexData
     std::vector<uint32_t> line_strip;
 };
 
-PatchVertexData read_vertex_data(const std::filesystem::path& quad, const std::filesystem::path& info)
+PatchVertexData build_vertex_data(const QuadPatch& patch, const std::vector<MappingElement>& mapping)
 {
     std::unordered_map<HashableCoords, uint32_t> indices;
     PatchVertexData result;
 
     {
-        std::vector<std::pair<HashableCoords, MappingCoords>> raw_mapping(file_size(info));
-        std::ifstream in{info, std::ios_base::binary};
-        in.read(reinterpret_cast<char*>(raw_mapping.data()), raw_mapping.size());
         uint32_t idx = 0;
-        result.vertices.reserve(raw_mapping.size());
+        result.vertices.reserve(mapping.size());
 
-        std::vector<uint32_t> right_side;
-        std::vector<uint32_t> bottom_side;
-
-        for (auto[M, m] : raw_mapping)
+        for (auto[M, m] : mapping)
         {
-            {
-                const auto&[m_x, m_y] = m;
-                const auto&[x, y, z] = M;
-                result.vertices.push_back({{float(m_x), float(m_y)}, {float(x), float(y), float(z)}});
-            }
-
-            // Due to rasterization rules the bottom boundary and right boundary doesn't get rendered, therefore
-            // we render it separately
-            if (std::get<0>(m) == 1.)
-            {
-                right_side.push_back(idx);
-            }
-
-            if (std::get<1>(m) == 1.)
-            {
-                bottom_side.push_back(idx);
-            }
+            const auto&[m_x, m_y] = m;
+            const auto&[x, y, z] = M;
+            result.vertices.push_back({{float(m_x), float(m_y)}, {float(x), float(y), float(z)}});
 
             indices.emplace(M, idx++);
         }
 
-        std::sort(right_side.begin(), right_side.end(),
-            [&result](uint32_t a, uint32_t b)
-            {
-                return result.vertices[a].mapped.m_y < result.vertices[b].mapped.m_y;
-            });
+        result.line_strip.reserve(patch.boundary[1].size() + patch.boundary[2].size());
 
-        std::sort(bottom_side.begin(), bottom_side.end(),
-            [&result](uint32_t a, uint32_t b)
-            {
-                return result.vertices[a].mapped.m_x > result.vertices[b].mapped.m_x;
-            });
-
-        result.line_strip = std::move(right_side);
-        result.line_strip.insert(result.line_strip.end(), bottom_side.begin(), bottom_side.end());
-    }
-
-    {
-        auto patch = read_plainfile(quad);
-        result.triangles.reserve(patch.size());
-        for (auto& tri : patch)
+        for (std::size_t j = 1; j <= 2; ++j)
         {
-            auto verts = triangle_verts(tri);
-            for (auto v : verts)
+            for (auto& v : patch.boundary[j])
             {
-                result.triangles.push_back(indices[v]);
+                result.line_strip.push_back(indices[v]);
             }
         }
     }
+
+    result.triangles.reserve(patch.triangles.size());
+    for (auto& tri : patch.triangles)
+    {
+        auto verts = triangle_verts(tri);
+        for (auto v : verts)
+        {
+            result.triangles.push_back(indices[v]);
+        }
+    }
+
 
     return result;
 }
@@ -494,10 +467,10 @@ BufferAndMemory make_buffer(const vk::PhysicalDevice& physical_device, vk::Devic
     return {std::move(memory), std::move(buffer)};
 }
 
-void Resampler::resample(const std::filesystem::path& quad, const std::filesystem::path& info_dir,
-    const std::filesystem::path& output_dir, std::size_t thread_idx)
+std::vector<std::array<float, 3>> Resampler::resample(const QuadPatch& patch,
+    const std::vector<MappingElement>& mapping, std::size_t thread_idx)
 {
-    auto[vertices, triangles, line_strip] = read_vertex_data(quad, info_dir / quad.filename());
+    auto[vertices, triangles, line_strip] = build_vertex_data(patch, mapping);
 
     auto& data = per_thread_datum[thread_idx];
 
@@ -543,36 +516,34 @@ void Resampler::resample(const std::filesystem::path& quad, const std::filesyste
 
     current_byte += layout.offset;
 
+    std::vector<std::array<float, 3>> result;
+    result.reserve(resampling_resolution*resampling_resolution);
+
+    for (std::size_t y = 0; y < resampling_resolution; ++y)
     {
-        std::ofstream result(output_dir / quad.filename(), std::ios_base::binary);
-
-        for (std::size_t y = 0; y < resampling_resolution; ++y)
+        const char* current =  current_byte;
+        for (std::size_t x = 0; x < resampling_resolution; ++x)
         {
-            const char* current =  current_byte;
-            for (std::size_t x = 0; x < resampling_resolution; ++x)
-            {
-                result.write(current, 3*sizeof(float));
-                // skip alpha
-                current += 4*sizeof(float);
-            }
-            current_byte += layout.rowPitch;
+            result.push_back(*reinterpret_cast<const std::array<float, 3>*>(current));
+            // skip alpha
+            current += 4*sizeof(float);
         }
-
-        // THIS IS A KOSTYL
-        // TODO: Think about this
-        // bottom right corner does not get rendered due to rasterization rules
-        // this can be fixed with a teeeeny-tiny upscaling, but this might result in
-        // seams due to interpolation :(
-        result.seekp(-3*sizeof(float), std::ios_base::cur);
-        std::size_t corner_idx = 0;
-        while (vertices[line_strip[corner_idx]].mapped.m_y < 1)
-        {
-            ++corner_idx;
-        }
-        result.write(reinterpret_cast<char*>(&vertices[line_strip[corner_idx]].position), 3*sizeof(float));
+        current_byte += layout.rowPitch;
     }
 
+    // THIS IS A KOSTYL
+    // TODO: Think about this
+    // bottom right corner does not get rendered due to rasterization rules
+    // this can be fixed with a teeeeny-tiny upscaling, but this might result in
+    // seams due to interpolation :(
+
+    result.back()[0] = static_cast<float>(get<0>(patch.boundary[1].back()));
+    result.back()[1] = static_cast<float>(get<1>(patch.boundary[1].back()));
+    result.back()[2] = static_cast<float>(get<2>(patch.boundary[1].back()));
+
     device->unmapMemory(data.image_memory.get());
+
+    return result;
 }
 
 void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,

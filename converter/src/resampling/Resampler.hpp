@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include "../clustering/Quadrangulation.hpp"
+#include "../Parametrization.hpp"
 
 
 #ifdef NDEBUG
@@ -22,11 +24,11 @@ class Resampler
 public:
     explicit Resampler(const ResamplerConfig& config);
 
-    void resample(const std::filesystem::path& quad, const std::filesystem::path& info_dir,
-        const std::filesystem::path& output_dir, std::size_t thread_idx);
+    std::vector<std::array<float, 3>> resample(const QuadPatch& patch,
+        const std::vector<MappingElement>& mapping, std::size_t thread_idx);
 
 private:
-    void build_pipeline(const ResamplerConfig& config);
+    void build_pipeline();
     void build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,
         uint32_t triangle_indices_count, uint32_t line_indices_count, std::size_t thread_idx);
 

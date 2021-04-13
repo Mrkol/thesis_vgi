@@ -4,5 +4,11 @@
 #include "../DataTypes.hpp"
 
 
-void quadrangulate(const std::filesystem::path& patchfile, const std::filesystem::path& info_directory,
+struct QuadPatch
+{
+    std::vector<ThickTriangle> triangles;
+    std::array<std::vector<HashableCoords>, 4> boundary;
+};
+
+std::vector<QuadPatch> quadrangulate(std::vector<ThickTriangle> triangles,
     std::size_t idx, const struct ClusteringData& data);
