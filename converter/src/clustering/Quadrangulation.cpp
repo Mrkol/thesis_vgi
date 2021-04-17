@@ -7,101 +7,9 @@
 #include <stack>
 
 #include "Clustering.hpp"
-#include "../SurfaceHashTable.hpp"
+#include "../DualSurfaceGraph.hpp"
 #include "../SurfaceGraph.hpp"
 
-
-// TODO: this can be made faster
-// Don't use this "raw"
-template<bool ASTAR, bool SCALED>
-std::vector<FloatingNumber> generic_pathfinder(const SurfaceGraph& graph,  std::size_t start,
-    fu2::unique_function<FloatingNumber(std::size_t)> scale_factor = {},
-    std::size_t target = 0)
-{
-    std::vector<FloatingNumber> distances;
-    distances.resize(graph.vertex_count(), std::numeric_limits<FloatingNumber>::max());
-    distances[start] = 0;
-
-    using QueueElement = std::pair<FloatingNumber, std::size_t>;
-    std::priority_queue<QueueElement, std::vector<QueueElement>, std::greater<>> queue;
-    queue.emplace(0, start);
-
-
-    while (!queue.empty())
-    {
-        auto current = queue.top().second;
-        queue.pop();
-
-        if constexpr (ASTAR)
-        {
-            if (current == target)
-            {
-                return distances;
-            }
-        }
-
-        for (auto adjacent : graph.adjacent_to(current))
-        {
-            auto edge_length = graph.get_distance(current, adjacent);
-            if constexpr (SCALED)
-            {
-                edge_length /= scale_factor(adjacent);
-            }
-            auto relaxed_distance = distances[current] + edge_length;
-
-            if (relaxed_distance < distances[adjacent])
-            {
-                distances[adjacent] = relaxed_distance;
-                if constexpr (ASTAR)
-                {
-                    relaxed_distance += graph.get_distance(adjacent, target);
-                }
-                queue.emplace(relaxed_distance, adjacent);
-            }
-        }
-    }
-
-    return distances;
-}
-
-std::vector<FloatingNumber> dijkstra(const SurfaceGraph& graph, std::size_t start)
-{
-    return generic_pathfinder<false, false>(graph, start);
-}
-
-std::vector<std::size_t> recontstruct_shortest_path(
-    const SurfaceGraph& graph, const std::vector<FloatingNumber>& distances,
-    std::size_t start, std::size_t end)
-{
-    if (distances[end] == std::numeric_limits<FloatingNumber>::max())
-    {
-        throw std::logic_error("Path could not be built: vertex is unreachable.");
-    }
-
-    std::vector<std::size_t> result{end};
-    while (result.back() != start)
-    {
-        auto& adjacents = graph.adjacent_to(result.back());
-        auto comparator = [&distances](std::size_t i, std::size_t j) { return distances[i] < distances[j]; };
-        result.push_back(*std::min_element(adjacents.begin(), adjacents.end(), comparator));
-    }
-
-    std::reverse(result.begin(), result.end());
-    return result;
-}
-
-std::vector<std::size_t> a_star(const SurfaceGraph& graph, std::size_t start, std::size_t finish)
-{
-    auto distances = generic_pathfinder<true, false>(graph, start, {}, finish);
-    return recontstruct_shortest_path(graph, distances, start, finish);
-}
-
-std::vector<std::size_t> scaled_a_star(const SurfaceGraph& graph, std::size_t start, std::size_t finish,
-    fu2::unique_function<FloatingNumber(std::size_t)> scale_factor)
-{
-    auto distances = generic_pathfinder<true, true>(graph, start, std::move(scale_factor), finish);
-    return recontstruct_shortest_path(graph, distances, start, finish);
-}
 
 std::vector<std::size_t>::const_iterator median_point(const SurfaceGraph& graph,
       const std::vector<std::size_t>& path)
@@ -140,16 +48,16 @@ std::vector<std::size_t> find_center_recurse(const SurfaceGraph& graph, const st
         throw std::logic_error("Midpoint recursion not possible with < 3 corners");
     }
 
-    std::size_t m = *median_point(graph, a_star(graph, corners[0], corners[1]));
+    std::size_t m = *median_point(graph, graph.a_star(corners[0], corners[1]));
 
-    auto distances = dijkstra(graph, m);
+    auto distances = graph.dijkstra(m);
 
     std::vector<std::size_t> result;
     result.reserve(corners.size());
 
     for (std::size_t i = 2; i < corners.size(); ++i)
     {
-        result.push_back(*median_point(graph, recontstruct_shortest_path(graph, distances, m, corners[i])));
+        result.push_back(*median_point(graph, graph.recontstruct_shortest_path(distances, m, corners[i])));
     }
 
     return result;
@@ -198,7 +106,7 @@ std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_e
     std::size_t naive_candidate;
     if (current.size() == 2)
     {
-        naive_candidate = *median_point(graph, a_star(graph, current[0], current[1]));
+        naive_candidate = *median_point(graph, graph.a_star(current[0], current[1]));
     }
     else
     {
@@ -230,7 +138,7 @@ std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_e
     return best;
 }
 
-void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceHashTable<FloatingNumber>& dual_graph,
+void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, DualSurfaceGraph& dual_graph,
     size_t u_idx, size_t v_idx)
 {
     // TODO: Optimize this crap
@@ -344,7 +252,7 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceH
 }
 
 std::vector<std::vector<std::size_t>> build_midpoint_paths(
-    std::vector<ThickTriangle>& patch, SurfaceGraph& graph, SurfaceHashTable<FloatingNumber>& dual_graph,
+    std::vector<ThickTriangle>& patch, SurfaceGraph& graph, DualSurfaceGraph& dual_graph,
     size_t center, PolygonEdges& polygon_edges)
 {
     // First we have to split edges that are only 2 verts in length
@@ -425,7 +333,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             }
         }
 
-        result[0] = scaled_a_star(graph, center, *midpoints[0],
+        result[0] = graph.scaled_a_star(center, *midpoints[0],
             [&distances_to_boundary](size_t i) { return distances_to_boundary[i] + NUMERICAL_STABILITY_EPS; });
 
 
@@ -468,7 +376,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
         }
 
 
-        result[second_idx] = scaled_a_star(graph, center, *midpoints[second_idx],
+        result[second_idx] = graph.scaled_a_star(center, *midpoints[second_idx],
             [&distances_to_bad_paths](size_t i) { return distances_to_bad_paths[i] + NUMERICAL_STABILITY_EPS; });
     }
 
@@ -587,7 +495,7 @@ std::vector<std::vector<std::size_t>> build_midpoint_paths(
             }
         }
 
-        *target_path = scaled_a_star(graph, center, *target_midpoint,
+        *target_path = graph.scaled_a_star(center, *target_midpoint,
             [&distances_to_bad_paths](size_t u) { return distances_to_bad_paths[u] + NUMERICAL_STABILITY_EPS; });
     }
     return result;
@@ -639,48 +547,6 @@ PolygonEdges find_polygon_edges(const ClusteringData& data,
     return boundary_edges;
 }
 
-constexpr std::size_t COLOR_NONE = std::numeric_limits<std::size_t>::max();
-
-std::vector<std::size_t> paint_quads(
-    const std::vector<ThickTriangle>& patch, const SurfaceHashTable<FloatingNumber>& dual_graph,
-    const std::vector<std::size_t>& starting_triangles, const std::unordered_set<SymmetricEdge>& banned)
-{
-    std::vector<std::size_t> triangle_colors;
-    triangle_colors.resize(patch.size(), COLOR_NONE);
-
-    for (std::size_t i = 0; i < starting_triangles.size(); ++i)
-    {
-        std::stack<std::size_t> stack;
-        stack.push(starting_triangles[i]);
-
-        while (!stack.empty())
-        {
-            std::size_t idx = stack.top();
-            stack.pop();
-
-            if (triangle_colors[idx] != COLOR_NONE)
-            {
-                continue;
-            }
-
-            triangle_colors[idx] = i;
-
-            auto edges = triangle_edges(patch[idx]);
-            for (auto& e : edges)
-            {
-                auto next = dual_graph.find_not(e, idx);
-                if (!banned.contains(e) && next != SurfaceHashTable<FloatingNumber>::INVALID
-                    && triangle_colors[next] == COLOR_NONE)
-                {
-                    stack.push(next);
-                }
-            }
-        }
-    }
-
-    return triangle_colors;
-}
-
 template<class Iter>
 void copy_side(const SurfaceGraph& graph, std::vector<HashableCoords>& side, Iter beg, Iter end)
 {
@@ -697,7 +563,7 @@ std::vector<QuadPatch> quadrangulate(std::vector<ThickTriangle> triangles,
 {
     SurfaceGraph graph{triangles};
 
-    SurfaceHashTable<FloatingNumber> dual_graph;
+    DualSurfaceGraph dual_graph;
     for (size_t idx = 0; idx < triangles.size(); ++idx)
     {
         auto& tri = triangles[idx];
@@ -730,14 +596,14 @@ std::vector<QuadPatch> quadrangulate(std::vector<ThickTriangle> triangles,
     // hack: starting edge corresponds to the previous patch
     std::rotate(starting_triangles.begin(), std::next(starting_triangles.begin()), starting_triangles.end());
 
-    auto colors = paint_quads(triangles, dual_graph, starting_triangles, banned);
+    auto colors = dual_graph.paint_quads(triangles, banned);
 
     std::vector<QuadPatch> result{starting_triangles.size()};
 
     {
         for (std::size_t i = 0; i < triangles.size(); ++i)
         {
-            if (colors[i] == COLOR_NONE)
+            if (colors[i] == DualSurfaceGraph::COLOR_NONE)
             {
                 continue;
             }

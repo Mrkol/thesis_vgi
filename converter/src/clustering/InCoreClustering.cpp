@@ -6,22 +6,14 @@
 #include <numeric>
 #include <iostream>
 
-#include "../SurfaceHashTable.hpp"
+#include "../DualSurfaceGraph.hpp"
 
 
 ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& triangles)
 {
     ClusteringData result;
 
-    SurfaceHashTable<FloatingNumber> table;
-
-    for (size_t i = 0; i < triangles.size(); ++i)
-    {
-        auto[e1, e2, e3] = triangle_edges(triangles[i]);
-        table.add(e1, i);
-        table.add(e2, i);
-        table.add(e3, i);
-    }
+    DualSurfaceGraph dual_graph{triangles};
 
     result.patches.reserve(triangles.size());
 
@@ -45,9 +37,9 @@ ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& trian
 
         auto[v1, v2, v3] = triangle_verts(t);
         patch.boundary = {
-            {table.find_not(e1, idx), length(e1), v1},
-            {table.find_not(e2, idx), length(e2), v2},
-            {table.find_not(e3, idx), length(e3), v3}};
+            {dual_graph.find_not(e1, idx), length(e1), v1},
+            {dual_graph.find_not(e2, idx), length(e2), v2},
+            {dual_graph.find_not(e3, idx), length(e3), v3}};
 
         result.border_graph_vertices[v1].insert(idx);
         result.border_graph_vertices[v2].insert(idx);

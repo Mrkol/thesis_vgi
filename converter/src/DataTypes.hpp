@@ -107,6 +107,13 @@ inline FloatingNumber MeanDimension(Dimensions d)
 	return (d.max_x + d.max_y + d.max_z - d.min_x - d.min_y - d.min_z) / 3;
 }
 
+inline void write_plainfile(const std::filesystem::path& path, const std::vector<ThickTriangle>& triangles)
+{
+    std::ofstream quad_file{path, std::ios_base::binary};
+    quad_file.write(reinterpret_cast<const char*>(triangles.data()),
+        static_cast<std::streamsize>(triangles.size() * sizeof(quatriangles[0])));
+}
+
 inline std::vector<ThickTriangle> read_plainfile(const std::filesystem::path& path)
 {
     std::vector<ThickTriangle> triangles;

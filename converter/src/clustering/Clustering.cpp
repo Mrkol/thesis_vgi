@@ -469,7 +469,7 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
 void check_consistency(const ClusteringData& data)
 {
     BorderGraphVertices vert_checker;
-    SurfaceHashTable<FloatingNumber> edge_checker;
+    SurfaceHashTable edge_checker;
     for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
     {
         const auto& patch = data.patches[idx];

@@ -2,7 +2,7 @@
 
 #include <numeric>
 
-#include "../SurfaceHashTable.hpp"
+#include "../DualSurfaceGraph.hpp"
 #include "Clustering.hpp"
 
 
@@ -29,7 +29,7 @@ ClusteringData merge_clustering_data(std::vector<ClusteringData> datas)
     }
 
     // Reconstruct cross-data adjacency information
-    SurfaceHashTable<FloatingNumber> potential_common_edges;
+    DualSurfaceGraph potential_common_edges;
 
     for (std::size_t current_idx = 0; const auto& data : datas)
     {

@@ -9,6 +9,7 @@
 #include "Parametrization.hpp"
 #include "ScopedTimer.hpp"
 #include "StaticThreadPool.hpp"
+#include "clustering/EdgeStraightening.hpp"
 
 
 void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output);
@@ -104,6 +105,61 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
+    {
+        std::vector<bool> used_flags(total_clustering_data.patches.size());
+
+        std::mutex mtx;
+        std::condition_variable pairs_available;
+        std::unordered_set<SymmetricPair<std::size_t>> adjacent_pairs; // guarded by mtx
+        for (std::size_t idx = 0; idx < used_flags.size(); ++idx)
+        {
+            for (auto& edge : total_clustering_data.patches[idx].boundary)
+            {
+                adjacent_pairs.insert({idx, edge.patch_idx});
+            }
+        }
+
+        StaticThreadPool pool;
+        for (std::size_t i = 0; i < adjacent_pairs.size(); ++i)
+        {
+            pool.submit(
+                [&total_clustering_data, &clusters_path,
+                    &used_flags, &mtx, &pairs_available, &adjacent_pairs]()
+                {
+                    std::unique_lock lock{mtx};
+
+                    auto it = adjacent_pairs.begin();
+                    std::size_t i = it->first;
+                    std::size_t j = it->second;
+
+                    while (used_flags[i] || used_flags[j])
+                    {
+                        pairs_available.wait(lock);
+
+                        it = adjacent_pairs.begin();
+                        i = it->first;
+                        j = it->second;
+                    }
+                    adjacent_pairs.erase(it);
+                    used_flags[i] = used_flags[j] = true;
+                    lock.unlock();
+
+                    auto first_path = clusters_path / std::to_string(i);
+                    auto second_path = clusters_path / std::to_string(j);
+
+                    auto first = read_plainfile(first_path);
+                    auto second = read_plainfile(second_path);
+                    straighten_edges({first, i}, {second, j}, total_clustering_data);
+                    write_plainfile(first_path, first);
+                    write_plainfile(second_path, second);
+
+                    lock.lock();
+                    used_flags[i] = used_flags[j] = false;
+
+                });
+        }
+    }
+
     debug_cluster_output(clusters_path, workdir / "clustered");
 
     auto quad_info_path = workdir / "cluster_info";
@@ -126,11 +182,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                     {
                         auto& quad = quads[i];
                         std::string name = cell.filename().string() + ":" + std::to_string(i);
-                        {
-                            std::ofstream quad_file{cell.parent_path() / name, std::ios_base::binary};
-                            quad_file.write(reinterpret_cast<const char*>(quad.triangles.data()),
-                                quad.triangles.size() * sizeof(quad.triangles[0]));
-                        }
+                        write_plainfile(cell.parent_path() / name, quad.triangles);
                         {
                             std::ofstream info_file{quad_info_path / name, std::ios_base::binary};
                             for (auto& edge : quad.boundary)
@@ -214,7 +266,8 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                     auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
 
                     std::ofstream out{resampled_dir / quad_path.filename(), std::ios_base::binary};
-                    out.write(reinterpret_cast<const char*>(result.data()), result.size() * sizeof(result[0]));
+                    out.write(reinterpret_cast<const char*>(result.data()),
+                        static_cast<std::streamsize>(result.size() * sizeof(result[0])));
                 });
         }
     }
@@ -325,7 +378,8 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
         std::vector<std::array<float, 3>> data{file_size(entry.path()) / sizeof(data[0])};
         {
             std::ifstream input{entry.path(), std::ios_base::binary};
-            input.read(reinterpret_cast<char*>(data.data()), data.size() * sizeof(data[0]));
+            input.read(reinterpret_cast<char*>(data.data()),
+                static_cast<std::streamsize>(data.size() * sizeof(data[0])));
         }
 
         std::array<float, 3> min{data.front()[0], data.front()[1], data.front()[2]};
@@ -353,6 +407,7 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
         std::ofstream output
             {output_dir / (entry.path().filename().string() + ".ppm"), std::ios_base::binary};
         output << "P6\n" << res << "\n" << res << "\n" << 255 << "\n";
-        output.write(reinterpret_cast<const char*>(converted.data()), converted.size() * sizeof(converted[0]));
+        output.write(reinterpret_cast<const char*>(converted.data()),
+            static_cast<std::streamsize>(converted.size() * sizeof(converted[0])));
     }
 }

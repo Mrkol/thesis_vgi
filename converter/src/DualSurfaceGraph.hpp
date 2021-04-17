@@ -4,14 +4,26 @@
 #include "DataTypes.hpp"
 
 #include <unordered_map>
+#include <unordered_set>
 
 
-
-template<class T>
-class SurfaceHashTable
+class DualSurfaceGraph
 {
 public:
 	static constexpr std::size_t INVALID = std::numeric_limits<std::size_t>::max();
+
+	DualSurfaceGraph() = default;
+
+	explicit DualSurfaceGraph(const std::vector<ThickTriangle>& triangles)
+    {
+	    for (std::size_t i = 0; i < triangles.size(); ++i)
+        {
+	        for (auto& e : triangle_edges(triangles[i]))
+            {
+                add(e, i);
+            }
+        }
+    }
 
 	std::pair<std::size_t, std::size_t> find(const SymmetricEdge& edge) const
 	{
@@ -73,6 +85,10 @@ public:
         remove({b, c}, idx);
         remove({c, a}, idx);
     }
+
+    static constexpr std::size_t COLOR_NONE = std::numeric_limits<std::size_t>::max();
+    std::vector<std::size_t> paint_quads(
+        const std::vector<ThickTriangle>& patch, const std::unordered_set<SymmetricEdge>& banned) const;
 
     auto begin() const { return impl.begin(); }
     auto end() const { return impl.begin(); }
