@@ -1,11 +1,11 @@
-#include "../SurfaceHashTable.hpp"
+#include "Clustering.hpp"
 
 #include <map>
 #include <set>
 #include <numbers>
 
 #include "../DisjointSetUnion.hpp"
-#include "Clustering.hpp"
+#include "../DualSurfaceGraph.hpp"
 
 
 void rotate_boundary(std::vector<Patch::BoundaryEdge>& boundary)
@@ -469,7 +469,7 @@ ClusteringData cluster(ClusteringData data, ClusteringConfig config)
 void check_consistency(const ClusteringData& data)
 {
     BorderGraphVertices vert_checker;
-    SurfaceHashTable edge_checker;
+    DualSurfaceGraph edge_checker;
     for (std::size_t idx = 0; idx < data.patches.size(); ++idx)
     {
         const auto& patch = data.patches[idx];

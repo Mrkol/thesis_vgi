@@ -73,7 +73,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
             std::ifstream in{cell, std::ios_base::binary};
             plain_rewrite << in.rdbuf();
         }
-        std::filesystem::remove_all(cellsdir);
+        remove_all(cellsdir);
     }
 
     ClusteringData total_clustering_data;
@@ -105,6 +105,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
+    if (false)
     {
         std::vector<bool> used_flags(total_clustering_data.patches.size());
 

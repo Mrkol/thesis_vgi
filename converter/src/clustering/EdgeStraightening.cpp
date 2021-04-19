@@ -39,23 +39,29 @@ void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, const Clu
     std::vector<FloatingNumber> distances_to_boundary(graph.vertex_count(),
         std::numeric_limits<FloatingNumber>::max());
 
+    auto start = graph.index_of(first_extracted.front().starting_vertex);
+    auto end = graph.index_of(second_extracted.front().starting_vertex);
+
     for (std::size_t i = 0; i < graph.vertex_count(); ++i)
     {
         auto& min = distances_to_boundary[i];
 
-        auto process = [&min, &graph, i](auto& boundary)
+        auto process = [&min, &graph, i, start, end](auto& boundary)
             {
                 for (auto& edge : boundary)
                 {
-                    min = std::min(min, graph.get_distance(graph.index_of(edge.starting_vertex), i));
+                    auto v = graph.index_of(edge.starting_vertex);
+                    if (v == start || v == end)
+                    {
+                        continue;
+                    }
+                    min = std::min(min, graph.get_distance(v, i));
                 }
             };
         process(first_extracted);
         process(second_extracted);
     }
 
-    auto start = graph.index_of(first_extracted.front().starting_vertex);
-    auto end = graph.index_of(second_extracted.front().starting_vertex);
     auto straightened_path = graph.scaled_a_star(start, end,
         [&distances_to_boundary](std::size_t j) { return distances_to_boundary[j]; });
 
