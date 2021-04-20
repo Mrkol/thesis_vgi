@@ -12,8 +12,8 @@ std::vector<Patch::BoundaryEdge> extract_boundary_part(
 
     std::vector<Patch::BoundaryEdge> result;
     result.reserve(std::distance(boundary.begin(), start) + std::distance(end, boundary.end()));
-    std::copy(boundary.begin(), start, std::back_inserter(result));
     std::copy(end, boundary.end(), std::back_inserter(result));
+    std::copy(boundary.begin(), start, std::back_inserter(result));
     return result;
 }
 
@@ -28,7 +28,7 @@ std::vector<T> concat(const std::vector<T>& first, const std::vector<T>& second)
     return result;
 }
 
-void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, const ClusteringData& clustering_data)
+void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, ClusteringData& clustering_data)
 {
     auto first_extracted = extract_boundary_part(clustering_data.patches[first.idx].boundary, second.idx);
     auto second_extracted = extract_boundary_part(clustering_data.patches[second.idx].boundary, first.idx);
@@ -69,6 +69,32 @@ void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, const Clu
     // so we'll simply leave it out of date.
     // TODO: maybe do it just in case
 
+    auto append_straightened =
+        [&graph]<class Iter>
+        (std::vector<Patch::BoundaryEdge>& boundary, std::size_t other_idx, Iter start, Iter end)
+        {
+            boundary.reserve(boundary.size() + std::distance(start, end));
+            while (start != end)
+            {
+                boundary.push_back(Patch::BoundaryEdge{
+                    .patch_idx = other_idx,
+                    .length = 0, // TODO: calculate this just in case?
+                    .starting_vertex = graph.coords(*start++),
+                    .starting_vertex_adjacent_to_none = false // TODO: calculate this just in case?
+                });
+            }
+        };
+
+    // Last vertices need to be skipped as there is 1 less edges than there are vertices in this path
+    append_straightened(second_extracted, first.idx,
+        straightened_path.cbegin(), std::prev(straightened_path.cend()));
+    append_straightened(first_extracted, second.idx,
+        straightened_path.crbegin(), std::prev(straightened_path.crend()));
+
+    clustering_data.patches[first.idx].boundary = std::move(first_extracted);
+    clustering_data.patches[second.idx].boundary = std::move(second_extracted);
+
+
     DualSurfaceGraph dual_graph{merged_triangles};
     std::unordered_set<SymmetricEdge> banned;
     for (std::size_t i = 0; i < straightened_path.size() - 1; ++i)
@@ -81,9 +107,19 @@ void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, const Clu
     first.cluster.clear();
     second.cluster.clear();
 
+    // We need to somehow understand what color the first patch got painted
+    // the triangle adjacent to the first edge of the boundary is guaranteed to be part of
+    // the first patch, therefore we use it
+    std::size_t first_color;
+    {
+        auto& boundary = clustering_data.patches[first.idx].boundary;
+        first_color = colors[dual_graph.find({boundary[0].starting_vertex, boundary[1].starting_vertex}).first];
+    }
+
     for (std::size_t idx = 0; idx < merged_triangles.size(); ++idx)
     {
-        if (colors[idx] == 0)
+        // 0th triangle is always part of the first patch
+        if (colors[idx] == first_color)
         {
             first.cluster.push_back(merged_triangles[idx]);
         }

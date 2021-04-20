@@ -12,4 +12,4 @@ struct ClusterWithIndex
     std::size_t idx;
 };
 
-void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, const ClusteringData& clustering_data);
+void straighten_edges(ClusterWithIndex first, ClusterWithIndex second, ClusteringData& clustering_data);

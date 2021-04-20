@@ -4,16 +4,14 @@ import os
 import math
 
 
-def read_gi(context, filepath):
-    freq = math.isqrt(os.path.getsize(filepath)//12)
+def read_gi(context, filepath, collection):
+    freq = int(math.sqrt(os.path.getsize(filepath)//12))
     with open(filepath, 'rb') as f:
         me = bpy.data.meshes.new('ImporedGIMesh')
         ob = bpy.data.objects.new('ImportedGI', me)
         ob.show_name = True
         # Link object to scene
-        new_collection = bpy.data.collections.new('new_collection')
-        bpy.context.scene.collection.children.link(new_collection)
-        new_collection.objects.link(ob)
+        collection.objects.link(ob)
 
         vertices = []
         triangles = []
@@ -29,29 +27,38 @@ def read_gi(context, filepath):
         me.from_pydata(vertices, [], triangles)
         me.update(calc_edges = True)
 
-    return {'FINISHED'}
+from bpy.props import StringProperty, CollectionProperty
+from bpy.types import Operator, OperatorFileListElement
 
 
-# ImportHelper is a helper class, defines filename and
-# invoke() function which calls the file selector.
-from bpy_extras.io_utils import ImportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
-from bpy.types import Operator
-
-
-class ImportGI(Operator, ImportHelper):
-    """This appears in the tooltip of the operator and in the generated docs"""
-    bl_idname = "import_test.gi"  # important since its how bpy.ops.import_test.some_data is constructed
+class ImportGI(Operator):
+    bl_idname = "import_test.gi"
     bl_label = "Import geometry image"
 
+    filename_ext = ""
+
     filter_glob: StringProperty(
-        default="*",
-        options={'HIDDEN'},
-        maxlen=255,  # Max internal buffer length, longer would be clamped.
-    )
+            default='*',
+            options={'HIDDEN'}
+        )
+
+    files: CollectionProperty(
+            name='Files',
+            type=OperatorFileListElement
+        )
+
+    directory: StringProperty(subtype='DIR_PATH')
+
+    def invoke(self, context, _event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
-        return read_gi(context, self.filepath)
+        new_collection = bpy.data.collections.new('imported_gi')
+        bpy.context.scene.collection.children.link(new_collection)
+        for file in self.files:
+            read_gi(context, os.path.join(self.directory, file.name), new_collection)
+        return {'FINISHED'}
 
 
 # Only needed if you want to add into a dynamic menu

@@ -598,16 +598,22 @@ std::vector<QuadPatch> quadrangulate(std::vector<ThickTriangle> triangles,
 
     auto colors = dual_graph.paint_quads(triangles, banned);
 
-    std::vector<QuadPatch> result{starting_triangles.size()};
+    std::vector<QuadPatch> result(starting_triangles.size());
 
     {
+        std::vector<std::size_t> quad_number_by_color(starting_triangles.size());
+        for (std::size_t i = 0; i < starting_triangles.size(); ++i)
+        {
+            quad_number_by_color[colors[starting_triangles[i]]] = i;
+        }
+
         for (std::size_t i = 0; i < triangles.size(); ++i)
         {
             if (colors[i] == DualSurfaceGraph::COLOR_NONE)
             {
                 continue;
             }
-            result[colors[i]].triangles.push_back(triangles[i]);
+            result[quad_number_by_color[colors[i]]].triangles.push_back(triangles[i]);
         }
     }
 

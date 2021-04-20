@@ -105,8 +105,11 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    if (false)
+    debug_cluster_output(clusters_path, workdir / "clustered");
+
     {
+        ScopedTimer timer("edge straightening");
+
         std::vector<bool> used_flags(total_clustering_data.patches.size());
 
         std::mutex mtx;
@@ -116,7 +119,10 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         {
             for (auto& edge : total_clustering_data.patches[idx].boundary)
             {
-                adjacent_pairs.insert({idx, edge.patch_idx});
+                if (edge.patch_idx != Patch::NONE)
+                {
+                    adjacent_pairs.insert({idx, edge.patch_idx});
+                }
             }
         }
 
@@ -129,19 +135,21 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                 {
                     std::unique_lock lock{mtx};
 
+                    // TODO: Refactor, this is pretty shite
                     auto it = adjacent_pairs.begin();
-                    std::size_t i = it->first;
-                    std::size_t j = it->second;
 
-                    while (used_flags[i] || used_flags[j])
+                    auto locked = [&used_flags](const auto& pair)
+                        { return used_flags[pair.first] || used_flags[pair.second]; };
+
+                    while ((it = std::find_if_not(adjacent_pairs.begin(), adjacent_pairs.end(), locked))
+                        == adjacent_pairs.end())
                     {
                         pairs_available.wait(lock);
-
-                        it = adjacent_pairs.begin();
-                        i = it->first;
-                        j = it->second;
                     }
+                    std::size_t i = it->first;
+                    std::size_t j = it->second;
                     adjacent_pairs.erase(it);
+
                     used_flags[i] = used_flags[j] = true;
                     lock.unlock();
 
@@ -156,12 +164,12 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
 
                     lock.lock();
                     used_flags[i] = used_flags[j] = false;
-
+                    pairs_available.notify_all();
                 });
         }
     }
 
-    debug_cluster_output(clusters_path, workdir / "clustered");
+    debug_cluster_output(clusters_path, workdir / "straightened");
 
     auto quad_info_path = workdir / "cluster_info";
 
