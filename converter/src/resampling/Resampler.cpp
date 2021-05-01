@@ -3,26 +3,8 @@
 #include <fstream>
 
 #include "../DataTypes.hpp"
+#include "VkHelpers.hpp"
 
-
-std::vector<char> read_shader(std::string_view name)
-{
-    auto path = std::filesystem::current_path();
-    path /= "shaders";
-    path /= name.data() + std::string(".spv");
-    std::ifstream file{path, std::ios::ate | std::ios::binary};
-
-    if (!file.is_open())
-    {
-        throw std::runtime_error("Shader is missing!");
-    }
-
-    std::vector<char> result(file.tellg());
-    file.seekg(0);
-    file.read(result.data(), result.size());
-
-    return result;
-}
 
 struct Vertex
 {
@@ -51,47 +33,11 @@ constexpr std::array vertex_input_attribute_descriptions{
         {/* location */ 1, /* binding */ 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)}
 };
 
-uint32_t find_memory_type(const vk::PhysicalDevice& physical_device,
-    uint32_t typeFilter, const vk::MemoryPropertyFlags& flags)
-{
-    auto properties = physical_device.getMemoryProperties();
-
-    for (uint32_t i = 0; i < properties.memoryTypeCount; ++i)
-    {
-        if (typeFilter & (1 << i)
-            && (properties.memoryTypes[i].propertyFlags & flags) == flags)
-        {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("Couldn't find an appropriate image_memory type!");
-}
-
 Resampler::Resampler(const ResamplerConfig& config)
 {
     resampling_resolution = (1 << uint32_t(config.log_resolution)) + 1;
 
-    if constexpr (!VALIDATION_LAYERS.empty())
-    {
-        auto layers = vk::enumerateInstanceLayerProperties();
-        for (auto valid_layer : VALIDATION_LAYERS)
-        {
-            bool found = false;
-            for (auto layer : layers)
-            {
-                if (std::string_view(layer.layerName) == valid_layer)
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-            {
-                throw std::runtime_error("Validation layer " + std::string(valid_layer) + " not supported!");
-            }
-        }
-    }
+    VkHelpers::check_validation_layers_support(VALIDATION_LAYERS);
 
     vk::ApplicationInfo app_info{"VGI Resampler", 1, "Vulkan.hpp", 1, VK_API_VERSION_1_2};
     vk::InstanceCreateInfo create_info{{}, &app_info, uint32_t(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data()};
@@ -152,7 +98,7 @@ Resampler::Resampler(const ResamplerConfig& config)
         auto mem_reqs = device->getImageMemoryRequirements(data.image.get());
         data.image_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
             mem_reqs.size,
-            find_memory_type(physical_device, mem_reqs.memoryTypeBits,
+            VkHelpers::find_memory_type(physical_device, mem_reqs.memoryTypeBits,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
         });
 
@@ -183,13 +129,13 @@ void Resampler::build_pipeline()
         return device->createShaderModuleUnique(info);
     };
 
-    auto vert_source = read_shader("resampling.vert");
+    auto vert_source = VkHelpers::read_shader("resampling.vert");
     auto vert_module = create_shader_module(vert_source);
     vk::PipelineShaderStageCreateInfo vert_info
         {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"};
 
 
-    auto frag_source = read_shader("resampling.frag");
+    auto frag_source = VkHelpers::read_shader("resampling.frag");
     auto frag_module = create_shader_module(frag_source);
     vk::PipelineShaderStageCreateInfo frag_info
         {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"};
@@ -326,7 +272,7 @@ void Resampler::build_pipeline()
         auto memory_requirements = device->getBufferMemoryRequirements(uniform_buffer.get());
         uniform_buffer_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
             memory_requirements.size,
-            find_memory_type(physical_device, memory_requirements.memoryTypeBits,
+            VkHelpers::find_memory_type(physical_device, memory_requirements.memoryTypeBits,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
         });
 
@@ -452,7 +398,7 @@ BufferAndMemory make_buffer(const vk::PhysicalDevice& physical_device, vk::Devic
     auto memory_requirements = device->getBufferMemoryRequirements(buffer.get());
     auto memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
         memory_requirements.size,
-        find_memory_type(physical_device, memory_requirements.memoryTypeBits,
+        VkHelpers::find_memory_type(physical_device, memory_requirements.memoryTypeBits,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
     });
 

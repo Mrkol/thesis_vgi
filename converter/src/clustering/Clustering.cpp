@@ -179,6 +179,13 @@ bool merge_preserve_topological_invariants(std::size_t first, std::size_t second
         already_met.insert(current);
     }
 
+    // When the model is a topological sphere, this happens only when 3 patches are left.
+    // As for other cases, I'm not really sure.
+    if (already_met.size() <= 1)
+    {
+        return false;
+    }
+
     return true;
 }
 
