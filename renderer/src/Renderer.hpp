@@ -5,6 +5,12 @@
 #include <span>
 
 
+struct QueueFamilyIndices
+{
+    uint32_t graphics_queue_idx;
+    uint32_t presentation_queue_idx;
+};
+
 class Renderer {
 public:
     /**
@@ -21,12 +27,24 @@ public:
 private:
     vk::Extent2D chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities);
 
+    // TODO: this procedural-like initialization pattern is questionable
+    void create_swapchain();
+
 private:
     fu2::unique_function<vk::Extent2D()> resolution_provider;
 
     vk::Instance* vulkan_instance;
     vk::UniqueSurfaceKHR display_surface;
     vk::PhysicalDevice physical_device;
+
+    QueueFamilyIndices queue_family_indices;
     vk::UniqueDevice device;
     vk::Queue graphics_queue;
+    vk::Queue present_queue;
+
+    vk::UniqueSwapchainKHR swapchain;
+    std::vector<vk::Image> swapchain_images;
+    std::vector<vk::UniqueImageView> swapchain_image_views;
+    vk::Format swapchain_format;
+    vk::Extent2D swapchain_extent;
 };

@@ -18,36 +18,34 @@ Application::Application(int argc, char** argv)
 {
     VkHelpers::check_validation_layers_support(VALIDATION_LAYERS);
 
-    {
-        vk::ApplicationInfo application_info{
-            APP_NAME, 1,
-            "Vulkan.hpp", 1,
-            VK_API_VERSION_1_2
-        };
+    vk::ApplicationInfo application_info{
+        APP_NAME, 1u,
+        "Vulkan.hpp", 1u,
+        VK_API_VERSION_1_2
+    };
 
-        uint32_t glfwExtCount;
-        auto glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+    uint32_t glfwExtCount;
+    auto glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
-        vulkan_instance = vk::createInstanceUnique(vk::InstanceCreateInfo{
-            {}, &application_info,
-            static_cast<uint32_t>(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data(),
-            glfwExtCount, glfwExts
-        });
+    vulkan_instance = vk::createInstanceUnique(vk::InstanceCreateInfo{
+        {}, &application_info,
+        static_cast<uint32_t>(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data(),
+        glfwExtCount, glfwExts
+    });
 
-        VkSurfaceKHR surface;
-        if (glfwCreateWindowSurface(VkInstance(vulkan_instance.get()), main_window.get(), nullptr, &surface) != VK_SUCCESS) {
-            AD_HOC_PANIC("Unable to create VK surface!");
-        }
-
-        renderer = std::make_unique<Renderer>(vulkan_instance.get(), vk::UniqueSurfaceKHR{surface},
-            std::span{VALIDATION_LAYERS}.subspan<0>(),
-            [this]()
-            {
-                int width, height;
-                glfwGetFramebufferSize(main_window, width, height);
-                return vk::Extent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-            });
+    VkSurfaceKHR surface;
+    if (glfwCreateWindowSurface(VkInstance(vulkan_instance.get()), main_window.get(), nullptr, &surface) != VK_SUCCESS) {
+        AD_HOC_PANIC("Unable to create VK surface!");
     }
+
+    renderer = std::make_unique<Renderer>(vulkan_instance.get(), vk::UniqueSurfaceKHR{surface},
+        std::span{VALIDATION_LAYERS}.subspan<0>(),
+        [this]()
+        {
+            int width, height;
+            glfwGetFramebufferSize(main_window.get(), &width, &height);
+            return vk::Extent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+        });
 }
 
 int Application::run()
