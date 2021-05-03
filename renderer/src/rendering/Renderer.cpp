@@ -1,5 +1,7 @@
 #include "Renderer.hpp"
 
+
+#include <iostream>
 #include <unordered_set>
 
 
@@ -79,6 +81,9 @@ Renderer::Renderer(vk::Instance& instance, vk::UniqueSurfaceKHR surface,
 {
     // TODO: Proper device selection
     physical_device = vulkan_instance->enumeratePhysicalDevices().front();
+
+    auto props = physical_device.getProperties();
+    std::cout << "Max bound desc sets: " << props.limits.maxBoundDescriptorSets << std::endl;
 
     queue_family_indices = chose_queue_families(physical_device, display_surface.get());    
 

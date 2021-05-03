@@ -6,7 +6,7 @@
 #include <memory>
 #include <Utility.hpp>
 
-#include "Renderer.hpp"
+#include "rendering/Renderer.hpp"
 
 
 class ApplicationBase {
@@ -32,10 +32,18 @@ public:
 };
 
 class Application : private ApplicationBase {
+    struct Config
+    {
+        bool print_diagnostics;
+    };
+
 public:
     Application(int argc, char** argv);
 
     int run();
+
+private:
+    Config parse_arguments(int argc, char** argv);
 
 private:
     std::unique_ptr<GLFWwindow, void (*)(GLFWwindow*)> main_window;

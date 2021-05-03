@@ -1,5 +1,7 @@
 #include "Application.hpp"
 
+
+#include <cxxopts.hpp>
 #include <VkHelpers.hpp>
 
 
@@ -13,9 +15,14 @@ constexpr std::array EXTENSIONS {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 constexpr const char* APP_NAME = "VGI renderer";
 
+
+
+
 Application::Application(int argc, char** argv)
     : main_window{glfwCreateWindow(800, 600, APP_NAME, nullptr, nullptr), &glfwDestroyWindow}
 {
+    parse_arguments(argc, argv);
+
     VkHelpers::check_validation_layers_support(VALIDATION_LAYERS);
 
     vk::ApplicationInfo application_info{
@@ -38,7 +45,9 @@ Application::Application(int argc, char** argv)
         AD_HOC_PANIC("Unable to create VK surface!");
     }
 
-    renderer = std::make_unique<Renderer>(vulkan_instance.get(), vk::UniqueSurfaceKHR{surface},
+    renderer = std::make_unique<Renderer>(vulkan_instance.get(),
+        vk::UniqueSurfaceKHR{surface,
+            vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>{vulkan_instance.get()}},
         std::span{VALIDATION_LAYERS}.subspan<0>(),
         [this]()
         {
@@ -58,4 +67,19 @@ int Application::run()
     }
 
     return 0;
+}
+
+Application::Config Application::parse_arguments(int argc, char** argv)
+{
+    cxxopts::Options options("VGI renderer", "");
+    
+    options.add_options()
+        ("d,diagnostics", "Enable diagnostic printing", cxxopts::value<bool>())
+    ;
+
+    auto parsed = options.parse(argc, argv);
+
+    return {
+        parsed["d"].as<bool>()
+    };
 }
