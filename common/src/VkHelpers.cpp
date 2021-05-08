@@ -3,7 +3,7 @@
 namespace VkHelpers
 {
 
-std::vector<char> read_shader(std::string_view name)
+std::vector<std::byte> read_shader(std::string_view name)
 {
     auto path = std::filesystem::current_path();
     path /= "shaders";
@@ -15,9 +15,9 @@ std::vector<char> read_shader(std::string_view name)
         throw std::runtime_error("Shader is missing!");
     }
 
-    std::vector<char> result(file.tellg());
+    std::vector<std::byte> result(file.tellg());
     file.seekg(0);
-    file.read(result.data(), static_cast<std::streamsize>(result.size()));
+    file.read(reinterpret_cast<char*>(result.data()), static_cast<std::streamsize>(result.size()));
 
     return result;
 }

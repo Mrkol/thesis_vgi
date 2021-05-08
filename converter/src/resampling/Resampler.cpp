@@ -87,7 +87,7 @@ Resampler::Resampler(const ResamplerConfig& config)
     for (auto& data : per_thread_datum)
     {
         // TODO: Most GPUs dont support ImageTiling::eLinear with ImageUsageFlagBits::eColorAttachment!!!
-        // gotta split it into 2 buffers and use one as a render target and the other one as GPU-CPU transfer buffer
+        // gotta split it into 2 buffers and use one as a record_commands target and the other one as GPU-CPU transfer buffer
         data.image = device->createImageUnique(vk::ImageCreateInfo{
             {}, vk::ImageType::e2D, OUTPUT_FORMAT,
             /* extents */ {resampling_resolution, resampling_resolution, 1},

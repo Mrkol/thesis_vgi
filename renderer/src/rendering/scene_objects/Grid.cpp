@@ -1,19 +1,68 @@
 #include "Grid.hpp"
 
+#include <Eigen/Dense>
+#include <vk_mem_alloc.h>
+
 #include "VkHelpers.hpp"
 
 
 struct Vertex
 {
-    float x, y, z;
+    Eigen::Vector3f data;
 };
 
-void GridSceneObject::update_descriptor_sets(vk::DescriptorSet)
+struct UBO
+{
+    Eigen::Matrix4f model;
+};
+
+static_assert(sizeof(Vertex) == 4*3);
+
+
+std::size_t grid_size_to_vert_count(std::size_t size)
+{
+    return 4*(size + 1);
+}
+
+GridSceneObject::GridSceneObject(std::size_t size)
+    : size(size)
 {
 }
 
-void GridSceneObject::render(vk::CommandBuffer)
+void GridSceneObject::on_type_object_available(SceneObjectType& type)
 {
+    // Type is guaranteed to be ours
+    our_type = dynamic_cast<GridSceneObjectType*>(&type);
+
+    // No need to release the old one, as the entire type object was recreated if this was called
+    vbo = our_type->acquire_vbo(size);
+    uniform_buffer = our_type->get_resource_manager()->create_ubo(sizeof(UBO));
+    uniforms = our_type->get_resource_manager()->create_descriptor_set(our_type->get_instance_descriptor_set_layout());
+    uniforms.write_ubo(uniform_buffer, 0);
+}
+
+void GridSceneObject::tick()
+{
+    Eigen::Quaternionf q = rotation * Eigen::AngleAxisf(0.0001f, Eigen::Vector3f::UnitZ());
+    rotation = q;
+
+    UBO ubo{
+        ( rotation
+        * Eigen::Translation3f(position)
+        * Eigen::AlignedScaling3f(scale)
+        ).matrix()
+    };
+    uniform_buffer.write_next({reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
+}
+
+void GridSceneObject::record_commands(vk::CommandBuffer cb)
+{
+    std::array offsets{vk::DeviceSize{0}};
+    cb.bindVertexBuffers(0, 1, &vbo, offsets.data());
+    std::array sets{uniforms.read_next()};
+    cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type->get_pipeline_layout(), 1,
+        static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
+    cb.draw(grid_size_to_vert_count(size), 1, 0, 0);
 }
 
 const SceneObjectTypeFactory& GridSceneObject::get_scene_object_type_factory() const
@@ -22,30 +71,44 @@ const SceneObjectTypeFactory& GridSceneObject::get_scene_object_type_factory() c
     return factory;
 }
 
-GridSceneObjectType::GridSceneObjectType(SceneObjectTypeCreateInfo info)
+GridSceneObject::~GridSceneObject()
 {
-    auto vert_source = VkHelpers::read_shader("debug.vert");
-    auto vert_module = info.device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
+    if (our_type)
+    {
+        our_type->release_vbo(size);
+    }
+}
+
+GridSceneObjectType::GridSceneObjectType(IResourceManager* irm)
+    : SceneObjectType(irm)
+    , vertex_shader{VkHelpers::read_shader("debug.vert")}
+    , fragment_shader{VkHelpers::read_shader("debug.frag")}
+{
+}
+
+vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
+{
+    auto device = resource_manager->get_device();
+    auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
         {},
-        vert_source.size(), reinterpret_cast<const uint32_t*>(vert_source .data())
+        vertex_shader.size(), reinterpret_cast<const uint32_t*>(vertex_shader.data())
     });
 
-    auto frag_source = VkHelpers::read_shader("debug.frag");
-    auto frag_module = info.device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
+    auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
         {},
-        frag_source.size(), reinterpret_cast<const uint32_t*>(frag_source.data())
+        fragment_shader.size(), reinterpret_cast<const uint32_t*>(fragment_shader.data())
     });
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{
-        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "grid"},
-        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "grid"}};
-    
+        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"},
+        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"}};
+
     vk::VertexInputBindingDescription vertex_input_binding_description
         {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
 
     std::array vertex_input_attribute_descriptions{
         vk::VertexInputAttributeDescription
-            {/* location */ 1, /* binding */ 0, vk::Format::eR32G32B32Sfloat, 0}
+            {/* location */ 0, /* binding */ 0, vk::Format::eR32G32B32Sfloat, 0}
     };
 
     vk::PipelineVertexInputStateCreateInfo vertex_input_info{
@@ -54,11 +117,12 @@ GridSceneObjectType::GridSceneObjectType(SceneObjectTypeCreateInfo info)
         static_cast<uint32_t>(vertex_input_attribute_descriptions.size()), vertex_input_attribute_descriptions.data()
     };
 
-    vk::PipelineInputAssemblyStateCreateInfo triangle_input_assembly_info{
-        {}, vk::PrimitiveTopology::eTriangleList, false
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly_info{
+        {}, vk::PrimitiveTopology::eLineList, false
     };
 
-    vk::Viewport viewport{0, 0,
+    vk::Viewport viewport{
+        0, 0,
         static_cast<float>(info.viewport_extents.width), static_cast<float>(info.viewport_extents.height),
         0, 1
     };
@@ -98,53 +162,90 @@ GridSceneObjectType::GridSceneObjectType(SceneObjectTypeCreateInfo info)
         {{}, false, vk::LogicOp::eCopy, 1, &color_blend_attachment_state, {0, 0, 0, 0}};
 
     vk::DescriptorSetLayoutBinding object_set{
-        /* binding */ OBJECT_DESCRIPTOR_SET_BINDING ,
-                      vk::DescriptorType::eUniformBuffer,
+        /* binding */ 0,
+        vk::DescriptorType::eUniformBuffer,
         /* descriptor count */ 1,
-                      vk::ShaderStageFlagBits::eVertex,
-                      nullptr
+        vk::ShaderStageFlagBits::eVertex,
+        nullptr
     };
 
-    instance_descriptor_set_layout = info.device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
+    instance_descriptor_set_layout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
         {}, 1, &object_set
     });
 
     std::array desc_set_layouts{
-        info.global_descriptor_set_layout,
+        info.scene_descriptor_set_layout,
         instance_descriptor_set_layout.get()
     };
 
-    pipeline_layout = info.device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
+    pipeline_layout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
         {},
         static_cast<uint32_t>(desc_set_layouts.size()), desc_set_layouts.data(),
         /* push constant ranges */ 0, nullptr
     });
 
-    
-    vk::PipelineInputAssemblyStateCreateInfo line_input_assembly_info{
-        {}, vk::PrimitiveTopology::eLineStrip, false
-    };
-
-    std::array dyn_states {vk::DynamicState::eViewport};
-    vk::PipelineDynamicStateCreateInfo dynamic_state_create_info{
-        {}, static_cast<uint32_t>(dyn_states.size()), dyn_states.data()
-    };
-
-    pipeline = info.device.createGraphicsPipelineUnique({}, vk::GraphicsPipelineCreateInfo{
-        {}, 2, shader_stages.data(),
+    return device.createGraphicsPipelineUnique({}, vk::GraphicsPipelineCreateInfo{
+        {}, static_cast<uint32_t>(shader_stages.size()), shader_stages.data(),
         &vertex_input_info,
-        &line_input_assembly_info,
+        &input_assembly_info,
         nullptr,
         &viewport_info,
         &rasterizer_info,
         &multisample_info,
         nullptr,
         &color_blend_state_create_info,
-        nullptr, //&dynamic_state_create_info, TODO: fix
+        nullptr,
         pipeline_layout.get(),
         info.render_pass,
         0,
         {},
         -1
     });
+}
+
+void fill_grid_vbo(UniqueVmaBuffer& buffer, std::size_t grid_size)
+{
+    auto data = reinterpret_cast<Vertex*>(buffer.map());
+
+    for (std::size_t i = 0; i <= grid_size; ++i)
+    {
+        auto percentage = 2.f * static_cast<float>(i) / static_cast<float>(grid_size) - 1.f;
+
+        data++->data = {percentage, -1, 0};
+        data++->data = {percentage,  1, 0};
+        data++->data = {-1, percentage, 0};
+        data++->data = { 1, percentage, 0};
+    }
+
+    buffer.unmap();
+}
+
+vk::Buffer GridSceneObjectType::acquire_vbo(std::size_t grid_size)
+{
+    auto it = buffers_for_sizes.find(grid_size);
+
+    if (it == buffers_for_sizes.end())
+    {
+        it = buffers_for_sizes.emplace(grid_size,
+            PerSizeData{
+                0,
+                resource_manager->create_vbo(sizeof(Vertex) * grid_size_to_vert_count(grid_size))
+            }).first;
+
+        fill_grid_vbo(it->second.buffer, grid_size);
+    }
+
+    ++it->second.users;
+    return it->second.buffer.get();
+}
+
+void GridSceneObjectType::release_vbo(std::size_t grid_size)
+{
+    auto it = buffers_for_sizes.find(grid_size);
+    --it->second.users;
+
+    if (it->second.users == 0)
+    {
+        buffers_for_sizes.erase(it);
+    }
 }

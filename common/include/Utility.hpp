@@ -28,5 +28,18 @@ struct SourceLocation
 #define AD_HOC_PANIC(msg)        \
     do                           \
     {                            \
-        panic(AD_HOC_HERE, msg); \
+        panic(AD_HOC_HERE, (msg)); \
     } while (false)
+
+#ifndef NDEBUG
+#define AD_HOC_ASSERT(cond, msg)        \
+    do                                  \
+    {                                   \
+        if (!(cond))                    \
+        {                               \
+            panic(AD_HOC_HERE, (msg));  \
+        }                               \
+    } while (false)
+#else
+#define AD_HOC_ASSERT(cond, msg)
+#endif

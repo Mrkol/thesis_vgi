@@ -1,3 +1,6 @@
 [submodule "thirdparty/function2"]
 	path = thirdparty/function2
 	url = https://github.com/Naios/function2.git
+[submodule "thirdparty/VulkanMemoryAllocator"]
+	path = thirdparty/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator

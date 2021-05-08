@@ -34,7 +34,7 @@ void check_validation_layers_support(const std::array<const char*, size>& valida
     }
 }
 
-std::vector<char> read_shader(std::string_view name);
+std::vector<std::byte> read_shader(std::string_view name);
 
 uint32_t find_memory_type(const vk::PhysicalDevice& physical_device,
     uint32_t typeFilter, const vk::MemoryPropertyFlags& flags);
