@@ -7,6 +7,8 @@
 
 #include "Scene.hpp"
 #include "ResourceManager.hpp"
+#include "UniqueVmaImage.hpp"
+#include "Gui.hpp"
 
 
 struct QueueFamilyIndices
@@ -24,7 +26,7 @@ public:
      * @param validation_layers
      * @param extensions
      */
-    explicit Renderer(vk::Instance& instance, vk::UniqueSurfaceKHR surface,
+    explicit Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
         std::span<const char* const> validation_layers, fu2::unique_function<vk::Extent2D()> res_provider);
 
     void render();
@@ -35,9 +37,17 @@ public:
 
     Scene* debug_get_scene() { return scene.get(); }
 
+    // begin IResourceManager
+
     RingBuffer create_ubo(std::size_t size) override;
     UniformRing create_descriptor_set(vk::DescriptorSetLayout layout) override;
     UniqueVmaBuffer create_vbo(std::size_t size) override;
+
+    vk::UniqueCommandBuffer begin_single_time_commands() override;
+    void finish_single_time_commands(vk::UniqueCommandBuffer cb) override;
+
+    // end IResourceManager
+
 
     ~Renderer() override;
 
@@ -47,12 +57,16 @@ private:
     // TODO: this procedural-like initialization pattern is questionable
     void create_swapchain();
 
+    void create_gui_framebuffers();
+
     void record_commands(std::size_t swapchain_idx);
+private:
+    constexpr static auto DEPTHBUFFER_FORMAT = vk::Format::eD32Sfloat;
 
 private:
     fu2::unique_function<vk::Extent2D()> resolution_provider;
 
-    vk::Instance* vulkan_instance;
+    vk::Instance vulkan_instance;
     vk::UniqueSurfaceKHR display_surface;
     vk::PhysicalDevice physical_device;
 
@@ -65,7 +79,7 @@ private:
     std::unique_ptr<void, void(*)(void*)> deferred_allocator_destroy{nullptr, nullptr};
 
     vk::UniqueDescriptorPool global_descriptor_pool;
-    vk::UniqueCommandPool command_pool;
+    vk::UniqueCommandPool single_use_command_pool;
 
     struct SwapchainData
     {
@@ -73,6 +87,10 @@ private:
         vk::UniqueSwapchainKHR swapchain;
         vk::Format format;
         vk::Extent2D extent;
+
+        UniqueVmaImage depthbuffer;
+        vk::UniqueImageView depthbuffer_view;
+
         vk::UniqueRenderPass render_pass;
 
         struct PerElementData
@@ -80,7 +98,10 @@ private:
             vk::Image image;
             vk::UniqueImageView image_view;
             vk::Fence image_fence;
-            vk::UniqueFramebuffer framebuffer;
+            vk::UniqueFramebuffer main_framebuffer;
+            vk::UniqueFramebuffer gui_framebuffer;
+
+            vk::UniqueCommandPool command_pool;
             vk::UniqueCommandBuffer command_buffer;
         };
 
@@ -90,6 +111,7 @@ private:
     SwapchainData swapchain_data;
 
     std::unique_ptr<Scene> scene;
+    std::unique_ptr<Gui> gui;
 
     std::size_t current_frame_idx{0};
 

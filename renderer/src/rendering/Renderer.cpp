@@ -3,7 +3,6 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-
 #include <iostream>
 #include <unordered_set>
 
@@ -77,15 +76,15 @@ vk::PresentModeKHR chose_present_mode(const vk::PhysicalDevice& device, const vk
         vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
 }
 
-Renderer::Renderer(vk::Instance& instance, vk::UniqueSurfaceKHR surface,
+Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     std::span<const char* const> validation_layers,
     fu2::unique_function<vk::Extent2D()> res_provider)
     : resolution_provider{std::move(res_provider)}
-    , vulkan_instance{&instance}
+    , vulkan_instance{instance}
     , display_surface{std::move(surface)}
 {
     // TODO: Proper device selection
-    physical_device = vulkan_instance->enumeratePhysicalDevices().front();
+    physical_device = vulkan_instance.enumeratePhysicalDevices().front();
 
     auto props = physical_device.getProperties();
     std::cout << "Max bound desc sets: " << props.limits.maxBoundDescriptorSets << std::endl;
@@ -151,44 +150,45 @@ Renderer::Renderer(vk::Instance& instance, vk::UniqueSurfaceKHR surface,
                 });
     }
 
-    command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
-        {}, queue_family_indices.graphics_queue_idx
-    });
-
     create_swapchain();
 
-    // TODO: This really confuses me...
-    std::size_t max_objects = 100;
-    // 2 sets: one global, one per-model
-    std::size_t max_sets = MAX_FRAMES_IN_FLIGHT * 2;
-    std::array pool_sizes{
-        vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(max_objects * max_sets)}
-    };
-    global_descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
-        {},
-        /* max sets */ static_cast<uint32_t>(max_sets),
-        /* pool sizes */ static_cast<uint32_t>(pool_sizes.size()), pool_sizes.data()
-    });
+    {
+        // TODO: This really confuses me...
+        std::size_t max_objects = 100;
+        // 2 sets: one global, one per-model
+        std::size_t max_sets = MAX_FRAMES_IN_FLIGHT * 2;
+        std::array pool_sizes{
+            vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(max_objects * max_sets)}
+        };
+        global_descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
+            {},
+            /* max sets */ static_cast<uint32_t>(max_sets),
+            /* pool sizes */ static_cast<uint32_t>(pool_sizes.size()), pool_sizes.data()
+        });
+    }
 
+    single_use_command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_family_indices.graphics_queue_idx
+    });
 
     scene = std::make_unique<Scene>(this, PipelineCreationInfo{
         swapchain_data.render_pass.get(),
         swapchain_data.extent
     });
 
+    gui = std::make_unique<Gui>(Gui::CreateInfo{
+        instance, physical_device, device.get(), this,
+        queue_family_indices.graphics_queue_idx, graphics_queue,
+        swapchain_data.elements.size(), swapchain_data.format
+    });
+
+    create_gui_framebuffers();
+
     for (auto& data : per_inflight_frame_data)
     {
         data.image_available_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
         data.rendering_finished_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
         data.in_flight_fence = device->createFenceUnique(vk::FenceCreateInfo{vk::FenceCreateFlagBits::eSignaled});
-    }
-
-
-
-    // TODO: remove
-    for (std::size_t i = 0; i < swapchain_data.elements.size(); ++i)
-    {
-        record_commands(i);
     }
 }
 
@@ -198,7 +198,11 @@ void Renderer::render()
 
     device->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
 
+    gui->tick();
+    // Scene::tick can show debug imgui thingies
     scene->tick();
+    gui->render();
+
 
     uint32_t idx;
     {
@@ -224,6 +228,10 @@ void Renderer::render()
     }
 
     swapchain_element.image_fence = data.in_flight_fence.get();
+
+    device->resetCommandPool(swapchain_element.command_pool.get(), vk::CommandPoolResetFlagBits{});
+    record_commands(idx);
+
 
     vk::PipelineStageFlags stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
@@ -263,7 +271,6 @@ void Renderer::render()
         {
             throw std::runtime_error("Graphics queue submission failed!");
         }
-
     }
 
     ++current_frame_idx;
@@ -320,7 +327,7 @@ void Renderer::create_swapchain()
         surface_caps.currentTransform, vk::CompositeAlphaFlagBitsKHR::eOpaque,
         present_mode,
         /* clipped */ true,
-        /* old swapchain */ nullptr
+        /* old swapchain */ swapchain_data.swapchain.get()
     });
 
     swapchain_data.elements.clear();
@@ -335,36 +342,66 @@ void Renderer::create_swapchain()
     swapchain_data.format = format.format;
     swapchain_data.extent = extent;
 
-    vk::AttachmentDescription attachment_description{
-        {}, swapchain_data.format, vk::SampleCountFlagBits::e1,
-        /* attachment ops */vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
-        /* stencil ops */ vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR
+
+
+    swapchain_data.depthbuffer = UniqueVmaImage(allocator, DEPTHBUFFER_FORMAT, swapchain_data.extent, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment, VMA_MEMORY_USAGE_GPU_ONLY);
+
+    swapchain_data.depthbuffer_view = device->createImageViewUnique(vk::ImageViewCreateInfo{
+        {}, swapchain_data.depthbuffer.get(), vk::ImageViewType::e2D, DEPTHBUFFER_FORMAT,
+        vk::ComponentMapping{},
+        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}
+    });
+
+
+    std::array attachment_descriptions{
+        vk::AttachmentDescription{
+            {}, swapchain_data.format, vk::SampleCountFlagBits::e1,
+            /* attachment ops */vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            /* stencil ops */ vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+        },
+        vk::AttachmentDescription{
+            {}, DEPTHBUFFER_FORMAT, vk::SampleCountFlagBits::e1,
+            /* attachment ops */ vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+            /* stencil ops */ vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal
+        }
+   };
+
+    vk::AttachmentReference color_attachment_reference{
+        /* attachment */ 0,
+        vk::ImageLayout::eColorAttachmentOptimal
     };
 
-    vk::AttachmentReference attachment_reference{
-        /* attachment */ 0,
-                         vk::ImageLayout::eColorAttachmentOptimal
+    vk::AttachmentReference depth_attachment_reference{
+        /* attachment */ 1,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal
     };
 
     vk::SubpassDescription subpass_description{
         {}, vk::PipelineBindPoint::eGraphics,
-        /* input attachments */ 0, nullptr,
-        /* color attachments */ 1, &attachment_reference
+        /* input */ 0, nullptr,
+        /* attach count */ 1,
+        /* color */         &color_attachment_reference,
+        /* resolve */       nullptr,
+        /* depth/stencil */ &depth_attachment_reference
     };
 
     vk::SubpassDependency dependency{
         /* src */ VK_SUBPASS_EXTERNAL,
         /* dst */ 0,
-        /* src stages */ vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        /* dst stages */ vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        /* src stages */
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        /* dst stages */
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
         /* src access */ {},
-        /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite
+        /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite
     };
 
     swapchain_data.render_pass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
         {},
-        1, &attachment_description,
+        static_cast<uint32_t>(attachment_descriptions.size()), attachment_descriptions.data(),
         1, &subpass_description,
         1, &dependency
     });
@@ -380,9 +417,9 @@ void Renderer::create_swapchain()
             vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
         });
 
-        std::array attachments {el.image_view.get()};
+        std::array attachments{el.image_view.get(), swapchain_data.depthbuffer_view.get()};
 
-        el.framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+        el.main_framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
             {}, swapchain_data.render_pass.get(),
             static_cast<uint32_t>(attachments.size()), attachments.data(),
             swapchain_data.extent.width, swapchain_data.extent.height,
@@ -390,13 +427,22 @@ void Renderer::create_swapchain()
         });
     }
 
-    auto cmd_buffers = device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
-        command_pool.get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(swapchain_data.elements.size())
-    });
 
-    for (std::size_t i = 0; i < swapchain_data.elements.size(); ++i)
+    for (auto& element : swapchain_data.elements)
     {
-        swapchain_data.elements[i].command_buffer = std::move(cmd_buffers[i]);
+        // as per https://developer.nvidia.com/blog/vulkan-dos-donts/
+        element.command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
+            {}, queue_family_indices.graphics_queue_idx
+        });
+    }
+
+    for (auto& element : swapchain_data.elements)
+    {
+        element.command_buffer =
+            std::move(device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
+                element.command_pool.get(),
+                vk::CommandBufferLevel::ePrimary, 1
+            }).front());
     }
 
     if (scene != nullptr)
@@ -405,11 +451,27 @@ void Renderer::create_swapchain()
             swapchain_data.render_pass.get(),
             swapchain_data.extent
         });
-        // TODO: remove
-        for (std::size_t i = 0; i < swapchain_data.elements.size(); ++i)
-        {
-            record_commands(i);
-        }
+    }
+
+    if (gui != nullptr)
+    {
+        create_gui_framebuffers();
+    }
+}
+
+void Renderer::create_gui_framebuffers()
+{
+    // TODO: consider moving this to Gui.cpp
+    for (auto& el : swapchain_data.elements)
+    {
+        std::array attachments{el.image_view.get()};
+
+        el.gui_framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+            {}, gui->get_render_pass(),
+            static_cast<uint32_t>(attachments.size()), attachments.data(),
+            swapchain_data.extent.width, swapchain_data.extent.height,
+            /* layers */ 1u
+        });
     }
 }
 
@@ -421,30 +483,40 @@ void Renderer::on_window_resized()
 void Renderer::record_commands(std::size_t swapchain_idx)
 {
     auto& swapchain_element = swapchain_data.elements[swapchain_idx];
-    auto& cb = swapchain_element.command_buffer;
-    cb->begin(vk::CommandBufferBeginInfo{});
-    {
-        std::array clear_colors{vk::ClearValue{std::array{0.f, 0.f, 0.f, 1.f}}};
+    auto cb = swapchain_element.command_buffer.get();
 
-        cb->beginRenderPass(vk::RenderPassBeginInfo{
+    cb.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    {
+        std::array clear_colors{
+            vk::ClearValue{vk::ClearColorValue{std::array{0.f, 0.f, 0.f, 1.f}}},
+            vk::ClearValue{vk::ClearDepthStencilValue{1, 0}}
+        };
+
+        vk::Rect2D area{{0, 0}, swapchain_data.extent};
+
+        cb.beginRenderPass(vk::RenderPassBeginInfo{
             swapchain_data.render_pass.get(),
-            swapchain_element.framebuffer.get(),
-            vk::Rect2D{{0, 0}, swapchain_data.extent},
+            swapchain_element.main_framebuffer.get(),
+            area,
             static_cast<uint32_t>(clear_colors.size()), clear_colors.data()
         }, vk::SubpassContents::eInline);
 
         {
-            scene->record_commands(cb.get());
+            scene->record_commands(cb);
         }
 
-        cb->endRenderPass();
+        cb.endRenderPass();
+
+        gui->record_commands(cb, swapchain_element.gui_framebuffer.get(), area);
     }
-    cb->end();
+    cb.end();
 }
 
 Renderer::~Renderer()
 {
     device->waitIdle();
+
+    ImGui_ImplVulkan_Shutdown();
 }
 
 RingBuffer Renderer::create_ubo(std::size_t size)
@@ -466,4 +538,27 @@ UniformRing Renderer::create_descriptor_set(vk::DescriptorSetLayout layout)
 UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
 {
     return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
+vk::UniqueCommandBuffer Renderer::begin_single_time_commands()
+{
+    vk::UniqueCommandBuffer result = std::move(device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
+        single_use_command_pool.get(), vk::CommandBufferLevel::ePrimary, 1
+    }).front());
+
+    result->begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+    return result;
+}
+
+void Renderer::finish_single_time_commands(vk::UniqueCommandBuffer cb)
+{
+    cb->end();
+
+    graphics_queue.submit({vk::SubmitInfo{
+        /* wait semos */ 0, nullptr, nullptr,
+        1, &cb.get()
+    }}, nullptr);
+    // TODO: actual fences
+    graphics_queue.waitIdle();
 }

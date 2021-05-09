@@ -161,6 +161,15 @@ vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
     vk::PipelineColorBlendStateCreateInfo color_blend_state_create_info
         {{}, false, vk::LogicOp::eCopy, 1, &color_blend_attachment_state, {0, 0, 0, 0}};
 
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_info{
+        {},
+        /* enable depth test */  true,
+        /* enable depth write */ true,
+        /* comparator */vk::CompareOp::eLess,
+        /* enable depth bounds test */ false,
+        /* enable stencil test */ false,
+    };
+
     vk::DescriptorSetLayoutBinding object_set{
         /* binding */ 0,
         vk::DescriptorType::eUniformBuffer,
@@ -192,7 +201,7 @@ vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
         &viewport_info,
         &rasterizer_info,
         &multisample_info,
-        nullptr,
+        &depth_stencil_info,
         &color_blend_state_create_info,
         nullptr,
         pipeline_layout.get(),

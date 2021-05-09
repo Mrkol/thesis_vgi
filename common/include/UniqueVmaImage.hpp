@@ -9,8 +9,8 @@ class UniqueVmaImage
 public:
     UniqueVmaImage() = default;
 
-    UniqueVmaImage(VmaAllocator allocator, std::size_t size,
-        vk::BufferUsageFlags buffer_usage, VmaMemoryUsage memory_usage);
+    UniqueVmaImage(VmaAllocator allocator, vk::Format format, vk::Extent2D extent,
+        vk::ImageTiling tiling, vk::ImageUsageFlags image_usage, VmaMemoryUsage memory_usage);
 
     UniqueVmaImage(const UniqueVmaImage&) = delete;
     UniqueVmaImage& operator=(const UniqueVmaImage&) = delete;
@@ -18,7 +18,7 @@ public:
     UniqueVmaImage(UniqueVmaImage&&) noexcept;
     UniqueVmaImage& operator=(UniqueVmaImage&&) noexcept;
 
-    [[nodiscard]] vk::UniqueImageView view() const;
+    vk::Image get() const { return image; }
 
     ~UniqueVmaImage();
 
@@ -26,5 +26,5 @@ private:
     VmaAllocator allocator{};
 
     VmaAllocation allocation{};
-    vk::UniqueImage buffer{};
+    vk::Image image{};
 };

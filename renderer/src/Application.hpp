@@ -49,6 +49,7 @@ private:
     Config parse_arguments(int argc, char** argv);
     static void on_window_resized(GLFWwindow* window, int width, int height);
     static void on_key_event(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void on_mouse_button(GLFWwindow* window, int button, int action, int mods);
 
 private:
     std::unique_ptr<GLFWwindow, void (*)(GLFWwindow*)> main_window;
@@ -57,4 +58,5 @@ private:
 
     Eigen::Vector3i cam_velocity{0, 0, 0};
     Eigen::Vector2f prev_mouse_pos{0, 0};
+    bool move_camera{false};
 };

@@ -9,6 +9,8 @@ find_package(Threads REQUIRED)
 
 option(CHECKS "Enables slow consistency checks" OFF)
 
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+
 if (CHECKS)
     add_definitions(-DCLUSTERING_CONSISTENCY_CHECKS)
 endif ()
@@ -24,4 +26,5 @@ target_link_libraries(renderer cxxopts::cxxopts)
 target_link_libraries(renderer glfw)
 target_link_libraries(renderer Eigen3::Eigen)
 target_link_libraries(renderer VulkanMemoryAllocator)
+target_link_libraries(renderer DearImGui)
 target_add_shaders(renderer ${shaders_renderer})

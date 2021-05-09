@@ -82,5 +82,8 @@ public:
     virtual UniformRing create_descriptor_set(vk::DescriptorSetLayout layout) = 0;
     virtual UniqueVmaBuffer create_vbo(std::size_t size) = 0;
 
+    virtual vk::UniqueCommandBuffer begin_single_time_commands() = 0;
+    virtual void finish_single_time_commands(vk::UniqueCommandBuffer cb) = 0;
+
     virtual  ~IResourceManager() = default;
 };

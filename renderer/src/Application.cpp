@@ -1,7 +1,8 @@
 #include "Application.hpp"
 
-
+#include <backends/imgui_impl_glfw.h>
 #include <cxxopts.hpp>
+
 #include <VkHelpers.hpp>
 
 
@@ -24,9 +25,9 @@ Application::Application(int argc, char** argv)
     parse_arguments(argc, argv);
 
     glfwSetWindowUserPointer(main_window.get(), this);
-    glfwSetInputMode(main_window.get(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetFramebufferSizeCallback(main_window.get(), on_window_resized);
     glfwSetKeyCallback(main_window.get(), on_key_event);
+    glfwSetMouseButtonCallback(main_window.get(), on_mouse_button);
 
     VkHelpers::check_validation_layers_support(VALIDATION_LAYERS);
 
@@ -49,6 +50,14 @@ Application::Application(int argc, char** argv)
     if (glfwCreateWindowSurface(VkInstance(vulkan_instance.get()), main_window.get(), nullptr, &surface) != VK_SUCCESS) {
         AD_HOC_PANIC("Unable to create VK surface!");
     }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForVulkan(main_window.get(), true);
 
     renderer = std::make_unique<Renderer>(vulkan_instance.get(),
         vk::UniqueSurfaceKHR{surface,
@@ -78,6 +87,8 @@ int Application::run()
     {
         glfwPollEvents();
 
+
+        ImGui_ImplGlfw_NewFrame();
         tick();
 
         renderer->render();
@@ -93,8 +104,13 @@ void Application::tick()
 
     {
         auto c = poll_cursor();
-        Eigen::Vector2f d = c - prev_mouse_pos;
-        cam->rotate(d.x(), d.y());
+
+        if (move_camera)
+        {
+            Eigen::Vector2f d = c - prev_mouse_pos;
+            cam->rotate(d.x(), d.y());
+        }
+
         prev_mouse_pos = c;
     }
 
@@ -123,6 +139,10 @@ void Application::on_window_resized(GLFWwindow* window, int width, int height)
 
 void Application::on_key_event(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
+    if (ImGui::GetIO().WantCaptureKeyboard)
+    {
+        return;
+    }
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
@@ -142,4 +162,28 @@ Eigen::Vector2f Application::poll_cursor()
     double x, y;
     glfwGetCursorPos(main_window.get(), &x, &y);
     return {x, y};
+}
+
+void Application::on_mouse_button(GLFWwindow* window, int button, int action, int mods)
+{
+    if (ImGui::GetIO().WantCaptureMouse)
+    {
+        return;
+    }
+
+    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        if (action == GLFW_PRESS)
+        {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            app->move_camera = true;
+        }
+        else if (action == GLFW_RELEASE)
+        {
+            app->move_camera = false;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
 }

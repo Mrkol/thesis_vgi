@@ -17,8 +17,12 @@ UniqueVmaBuffer::UniqueVmaBuffer(VmaAllocator allocator, std::size_t size,
     };
 
     VkBuffer buf;
-    vmaCreateBuffer(allocator, &static_cast<const VkBufferCreateInfo&>(buf_info), &alloc_info,
+    auto retcode = vmaCreateBuffer(allocator, &static_cast<const VkBufferCreateInfo&>(buf_info), &alloc_info,
         &buf, &allocation, nullptr);
+    if (retcode != VK_SUCCESS)
+    {
+        throw std::runtime_error("Unable to create a VAM buffer!");
+    }
     buffer = buf;
 }
 
