@@ -25,7 +25,7 @@ public:
 
     [[nodiscard]] vk::RenderPass get_render_pass() const { return render_pass.get(); };
 
-    void tick();
+    void tick(float delta_seconds);
 
     void render();
 

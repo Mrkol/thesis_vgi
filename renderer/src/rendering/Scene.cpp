@@ -2,7 +2,9 @@
 
 #include "SceneObjectBase.hpp"
 #include "scene_objects/Grid.hpp"
+#include "scene_objects/VMesh.hpp"
 #include "../EigenHelpers.hpp"
+#include "data_primitives/RingBuffer.hpp"
 
 
 struct GlobalUBO
@@ -22,7 +24,7 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         /* binding */ 0,
         vk::DescriptorType::eUniformBuffer,
         /* descriptor count */ 1,
-        vk::ShaderStageFlagBits::eVertex,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eTessellationEvaluation,
         nullptr
     };
 
@@ -30,10 +32,14 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         {}, 1, &binding
     });
 
-    global_uniforms = irm->create_descriptor_set(global_descriptor_set_layout.get());
+    global_uniforms = irm->create_descriptor_set_ring(global_descriptor_set_layout.get());
     global_uniforms.write_ubo(global_uniform_buffer, 0);
 
     add_object(std::make_unique<GridSceneObject>(10));
+    auto vmesh = std::make_unique<VMesh>("../../models/nature_snow/resampled");
+    vmesh->scale.setConstant(0.0025f);
+    vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+    add_object(std::move(vmesh));
 }
 
 void Scene::recreate_pipelines(PipelineCreationInfo info)
@@ -47,7 +53,15 @@ void Scene::recreate_pipelines(PipelineCreationInfo info)
     }
 }
 
-void Scene::tick()
+void Scene::reload_shaders()
+{
+    for (auto&[name, info] : object_types)
+    {
+        info.type->reload_shaders();
+    }
+}
+
+void Scene::tick(float delta_seconds)
 {
     GlobalUBO ubo{
         camera.view(), //Eigen::Matrix4f::Identity() * 0.5f
@@ -76,6 +90,14 @@ void Scene::tick()
     std::erase_if(scene_objects, [](const auto& uptr) { return !uptr->is_alive(); });
 
     std::erase_if(object_types, [](const auto& kv) { return kv.second.instances.empty(); });
+}
+
+void Scene::record_pre_commands(vk::CommandBuffer cb)
+{
+    for (auto& object : scene_objects)
+    {
+        object->record_pre_commands(cb);
+    }
 }
 
 void Scene::record_commands(vk::CommandBuffer cb)

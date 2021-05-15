@@ -1,7 +1,6 @@
 #include <cxxopts.hpp>
 #include <fstream>
 
-#include "StaticThreadPool.hpp"
 #include "ScopedTimer.hpp"
 
 #include "ToPlainConverters.hpp"
@@ -39,6 +38,8 @@ int main(int argc, char** argv)
             cxxopts::value<std::size_t>()->default_value("7"))
         ("resampling-thread-count", "Render resampled textures concurrently with this amount of threads",
             cxxopts::value<std::size_t>()->default_value("1"))
+        ("d,debug-output", "Enable debug outputs",
+            cxxopts::value<bool>())
         ("h,help", "Print usage")
         ;
 
@@ -90,7 +91,7 @@ int main(int argc, char** argv)
         obj_to_plain(input, plainfile, workdir);
     }
 
-    process_plain(plainfile, workdir, output,
+    process_plain(plainfile, workdir, output, parsed["debug-output"].as<bool>(),
         clustering_metric_config, memory_limit, clustering_error_threshold,
         parametrization_config, resampler_config);
 

@@ -20,7 +20,8 @@ constexpr const char* APP_NAME = "VGI renderer";
 
 
 Application::Application(int argc, char** argv)
-    : main_window{glfwCreateWindow(800, 600, APP_NAME, nullptr, nullptr), &glfwDestroyWindow}
+    : last_tick(Clock::now())
+    , main_window{glfwCreateWindow(800, 600, APP_NAME, nullptr, nullptr), &glfwDestroyWindow}
 {
     parse_arguments(argc, argv);
 
@@ -89,18 +90,23 @@ int Application::run()
 
 
         ImGui_ImplGlfw_NewFrame();
-        tick();
+        auto this_tick = Clock::now();
+        float delta_seconds =
+            std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1, 1>>>(this_tick - last_tick).count();
+        last_tick = this_tick;
 
-        renderer->render();
+
+        tick(delta_seconds);
+        renderer->render(delta_seconds);
     }
 
     return 0;
 }
 
-void Application::tick()
+void Application::tick(float delta_seconds)
 {
     auto* cam = renderer->debug_get_scene()->debug_get_camera();
-    cam->move(cam_velocity.cast<float>());
+    cam->move(cam_velocity.cast<float>(), 1.4f * delta_seconds);
 
     {
         auto c = poll_cursor();
@@ -114,6 +120,10 @@ void Application::tick()
         prev_mouse_pos = c;
     }
 
+    if (std::exchange(shader_hotswap_requested, false))
+    {
+        renderer->hotswap_shaders();
+    }
 }
 
 Application::Config Application::parse_arguments(int argc, char** argv)
@@ -148,6 +158,12 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
     if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
     {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+        return;
+    }
+
+    if (key == GLFW_KEY_R && action == GLFW_RELEASE)
+    {
+        app->shader_hotswap_requested = true;
         return;
     }
 

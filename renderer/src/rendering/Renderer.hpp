@@ -9,6 +9,8 @@
 #include "ResourceManager.hpp"
 #include "UniqueVmaImage.hpp"
 #include "Gui.hpp"
+#include "data_primitives/RingBuffer.hpp"
+#include "data_primitives/DescriptorSetRing.hpp"
 
 
 struct QueueFamilyIndices
@@ -29,7 +31,7 @@ public:
     explicit Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
         std::span<const char* const> validation_layers, fu2::unique_function<vk::Extent2D()> res_provider);
 
-    void render();
+    void render(float delta_seconds);
 
     void on_window_resized();
 
@@ -40,13 +42,24 @@ public:
     // begin IResourceManager
 
     RingBuffer create_ubo(std::size_t size) override;
-    UniformRing create_descriptor_set(vk::DescriptorSetLayout layout) override;
+    RingBuffer create_sbo(std::size_t size) override;
+    DescriptorSetRing create_descriptor_set_ring(vk::DescriptorSetLayout layout) override;
+    vk::UniqueDescriptorSet create_descriptor_set(vk::DescriptorSetLayout layout) override;
     UniqueVmaBuffer create_vbo(std::size_t size) override;
+    VirtualTextureSet create_svt(
+        std::size_t gpu_cache_side_size,
+        std::size_t per_frame_update_limit,
+        vk::Format format,
+        std::size_t min_mip,
+        std::vector<std::vector<const std::byte*>> image_mip_data
+    ) override;
 
     vk::UniqueCommandBuffer begin_single_time_commands() override;
     void finish_single_time_commands(vk::UniqueCommandBuffer cb) override;
 
     // end IResourceManager
+
+    void hotswap_shaders();
 
 
     ~Renderer() override;

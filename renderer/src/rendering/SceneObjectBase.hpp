@@ -17,6 +17,8 @@ public:
 
     virtual void tick() {};
 
+    virtual void record_pre_commands(vk::CommandBuffer cb) {};
+
     virtual void record_commands(vk::CommandBuffer cb) = 0;
 
     [[nodiscard]] virtual const SceneObjectTypeFactory& get_scene_object_type_factory() const = 0;
@@ -41,6 +43,8 @@ public:
     virtual void tick() {};
 
     virtual void record_commands(vk::CommandBuffer cb) {};
+
+    virtual void reload_shaders() {};
 
     struct PipelineCreateInfo
     {

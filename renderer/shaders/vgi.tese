@@ -1,0 +1,120 @@
+#version 460
+
+
+// INPUTS
+
+layout(quads, equal_spacing, cw) in;
+
+layout(location = 0) in float instance_mip[];
+layout(location = 1) in vec2 instance_param_space_offset[];
+layout(location = 2) in float instance_param_space_size[];
+layout(location = 3) in uint instance_index[];
+
+
+// OUTPUTS
+
+layout(location = 0) out vec3 color;
+layout(location = 1) flat out uint out_mip;
+
+
+// UNIFORMS
+
+layout(set = 0, binding = 0) uniform GlobalUBO {
+    mat4 view;
+    mat4 proj;
+} global_ubo;
+
+layout(set = 1, binding = 0) uniform ObjectUBO {
+    mat4 model;
+    uint cache_side_size;
+    uint min_mip;
+    uint mip_level_count;
+} object_ubo;
+
+layout(set = 1, binding = 1) uniform sampler2D geometry_image;
+
+layout(std430, set = 1, binding = 2) readonly buffer ObjectSBO {
+    // AFAIK we can't be more specific about how data is layed out here :(
+    uint indirection_tables[];
+} object_sbo;
+
+uint calc_indirection_tables_size(uint count)
+{
+    return ((1u << (2*count)) - 1)/3;
+}
+
+uint read_indirection(uint idx, uint size, uint x, uint y)
+{
+    return object_sbo.indirection_tables[
+        idx * calc_indirection_tables_size(object_ubo.mip_level_count)
+        + calc_indirection_tables_size(size)
+        + y * (1u << size)
+        + x
+    ];
+}
+
+const uint PAGE_NONE = ~uint(0);
+
+/**
+ * page -- page index (row-major)
+ * in_page_uv -- normalized coords of requested data
+ */
+vec3 get_from_cache(uint page, vec2 in_page_uv)
+{
+    vec2 page_in_cache_uv = vec2(
+        float(page % object_ubo.cache_side_size),
+        float(page / object_ubo.cache_side_size));
+
+    float psz = float((1 << object_ubo.min_mip) + 1);
+    return texture(geometry_image,
+        (page_in_cache_uv + (in_page_uv * (psz - 1) + 0.5) / psz)
+        / float(object_ubo.cache_side_size)).xyz;
+}
+
+vec3 read_virtual_texture(uint idx, uint mip, vec2 uv)
+{
+    uint page_count = (1u << mip) / (1u << object_ubo.min_mip);
+
+    // pages overlap, so we have choice here. Always chose the toppest-leftest page
+    // therefore clap the bottom-right border to the bottom-right page
+    uvec2 page_uv = clamp(uvec2(uv * page_count), 0, page_count - 1);
+
+    uint page = PAGE_NONE;
+
+    while (mip >= object_ubo.min_mip)
+    {
+        page = read_indirection(idx,
+            mip - object_ubo.min_mip,
+            page_uv.x, page_uv.y
+        );
+
+        if (page != PAGE_NONE)
+        {
+            break;
+        }
+
+        page_uv /= 2;
+        page_count /= 2;
+        --mip;
+    }
+
+    vec2 in_page_uv = uv * page_count - page_uv;
+
+    return get_from_cache(page, in_page_uv);
+}
+
+void main()
+{
+    color = vec3(gl_TessCoord.xy, 1);
+    out_mip = uint(instance_mip[0]);
+
+    vec3 coords = read_virtual_texture(
+        instance_index[0],
+        uint(clamp(log2(instance_mip[0] / instance_param_space_size[0]),
+            object_ubo.min_mip, object_ubo.min_mip + object_ubo.mip_level_count - 1)),
+        instance_param_space_offset[0] + gl_TessCoord.xy * instance_param_space_size[0]
+    );
+
+    gl_Position = global_ubo.proj * global_ubo.view * object_ubo.model
+        * vec4(coords, 1.0);
+}

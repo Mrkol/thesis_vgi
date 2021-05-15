@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <utility>
 
 
 class Camera
@@ -8,8 +9,10 @@ class Camera
 public:
     [[nodiscard]] Eigen::Matrix4f view() const;
 
-    void move(Eigen::Vector3f direction);
+    void move(Eigen::Vector3f direction, float speed);
     void rotate(float dyaw, float dpitch);
+
+    void set_position(Eigen::Vector3f pos) { position = std::move(pos); };
 
 private:
     Eigen::Vector3f position{0, 0, 1};

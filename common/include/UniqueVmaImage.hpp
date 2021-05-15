@@ -18,7 +18,7 @@ public:
     UniqueVmaImage(UniqueVmaImage&&) noexcept;
     UniqueVmaImage& operator=(UniqueVmaImage&&) noexcept;
 
-    vk::Image get() const { return image; }
+    [[nodiscard]] vk::Image get() const { return image; }
 
     ~UniqueVmaImage();
 

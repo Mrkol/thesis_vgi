@@ -3,6 +3,8 @@
 #include <Eigen/Geometry>
 
 #include "Tangible.hpp"
+#include "../data_primitives/RingBuffer.hpp"
+#include "../data_primitives/DescriptorSetRing.hpp"
 
 
 class GridSceneObjectType;
@@ -27,7 +29,7 @@ private:
 
     vk::Buffer vbo;
     RingBuffer uniform_buffer;
-    UniformRing uniforms;
+    DescriptorSetRing uniforms;
 };
 
 class GridSceneObjectType : public SceneObjectType

@@ -95,12 +95,13 @@ Gui::Gui(CreateInfo info)
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
 
-void Gui::tick()
+void Gui::tick(float delta_seconds)
 {
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::ShowDemoWindow();
+    ImGui::Text("%f fps", 1.f/delta_seconds);
+    ImGui::Text("%f ms", delta_seconds * 1000.f);
 }
 
 void Gui::render()

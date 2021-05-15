@@ -4,8 +4,9 @@
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
 #include <memory>
-#include <Utility.hpp>
+#include <chrono>
 
+#include <Utility.hpp>
 #include "rendering/Renderer.hpp"
 
 
@@ -42,7 +43,7 @@ public:
     int run();
 
 private:
-    void tick();
+    void tick(float delta_seconds);
 
     Eigen::Vector2f poll_cursor();
 
@@ -52,6 +53,9 @@ private:
     static void on_mouse_button(GLFWwindow* window, int button, int action, int mods);
 
 private:
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point last_tick;
+
     std::unique_ptr<GLFWwindow, void (*)(GLFWwindow*)> main_window;
     vk::UniqueInstance vulkan_instance;
     std::unique_ptr<Renderer> renderer;
@@ -59,4 +63,6 @@ private:
     Eigen::Vector3i cam_velocity{0, 0, 0};
     Eigen::Vector2f prev_mouse_pos{0, 0};
     bool move_camera{false};
+
+    bool shader_hotswap_requested{false};
 };

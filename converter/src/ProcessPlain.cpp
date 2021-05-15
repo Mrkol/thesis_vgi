@@ -19,7 +19,7 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
     const ResamplerConfig& config);
 
 void process_plain(const std::filesystem::path& plainfile, const std::filesystem::path& workdir,
-    const std::filesystem::path& output_dir,
+    const std::filesystem::path& output_dir, bool debug_output,
     ClusteringMetricConfig metric_config, std::size_t memory_limit, FloatingNumber error_threshold,
     ParametrizationConfig parametrization_config, ResamplerConfig resampler_config)
 {
@@ -105,7 +105,10 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    debug_cluster_output(clusters_path, workdir / "clustered");
+    if (debug_output)
+    {
+        debug_cluster_output(clusters_path, workdir / "clustered");
+    }
 
     {
         ScopedTimer timer("edge straightening");
@@ -169,7 +172,10 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    debug_cluster_output(clusters_path, workdir / "straightened");
+    if (debug_output)
+    {
+        debug_cluster_output(clusters_path, workdir / "straightened");
+    }
 
     auto quad_info_path = workdir / "cluster_info";
 
@@ -204,7 +210,10 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    debug_cluster_output(clusters_path, workdir / "quadrangulated");
+    if (debug_output)
+    {
+        debug_cluster_output(clusters_path, workdir / "quadrangulated");
+    }
 
     auto read_quad = [](const std::filesystem::path& quad, const std::filesystem::path& info)
         {
@@ -242,11 +251,16 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
         }
     }
 
-    debug_parametrization_output(clusters_path, quad_info_path, workdir / "parametrized");
-
+    if (debug_output)
+    {
+        debug_parametrization_output(clusters_path, quad_info_path, workdir / "parametrized");
+    }
 
     auto resampled_dir = output_dir / "resampled";
     create_directory(resampled_dir);
+
+    auto resampled_positions_dir = resampled_dir / "positions";
+    create_directory(resampled_positions_dir);
 
     {
         ScopedTimer timer("resampling");
@@ -256,34 +270,56 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
             resampler_config.thread_count = std::thread::hardware_concurrency();
         }
 
-        Resampler resampler{resampler_config};
-        StaticThreadPool pool{resampler_config.thread_count};
+        // TODO: replace with proper downsampling
 
-        for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
+        std::size_t max_mip = resampler_config.log_resolution;
+        for (std::size_t mip_level = 3; mip_level < max_mip; ++mip_level)
         {
-            pool.submit(
-                [quad_path = entry.path(), &quad_info_path, &resampled_dir, &resampler,
-                 &read_quad, &parametrization_dir]
-                ()
-                {
-                    auto quad = read_quad(quad_path, quad_info_path / quad_path.filename());
-                    std::vector<MappingElement> mapping;
-                    {
-                        std::ifstream in{parametrization_dir / quad_path.filename(), std::ios_base::binary};
-                        mapping = read_vector<MappingElement>(in);
-                    }
-                    auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
+            resampler_config.log_resolution = mip_level;
 
-                    std::ofstream out{resampled_dir / quad_path.filename(), std::ios_base::binary};
-                    out.write(reinterpret_cast<const char*>(result.data()),
-                        static_cast<std::streamsize>(result.size() * sizeof(result[0])));
-                });
+            Resampler resampler{resampler_config};
+            StaticThreadPool pool{resampler_config.thread_count};
+
+            for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
+            {
+                pool.submit(
+                    [quad_path = entry.path(), &quad_info_path, &resampled_positions_dir, &resampler,
+                        &read_quad, &parametrization_dir, mip_level]
+                        ()
+                    {
+                        auto quad = read_quad(quad_path, quad_info_path / quad_path.filename());
+                        std::vector<MappingElement> mapping;
+                        {
+                            std::ifstream in{parametrization_dir / quad_path.filename(), std::ios_base::binary};
+                            mapping = read_vector<MappingElement>(in);
+                        }
+
+
+                        auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
+
+                        std::ofstream out{
+                            resampled_positions_dir
+                                / (quad_path.filename().string() + ":" + std::to_string(mip_level)),
+                            std::ios_base::binary
+                        };
+
+                        out.write(reinterpret_cast<const char*>(result.data()),
+                            static_cast<std::streamsize>(result.size() * sizeof(result[0])));
+                    });
+            }
         }
     }
 
-    auto debug_images_dir = workdir / "images";
-    create_directory(debug_images_dir);
-    debug_convert_resampled(resampled_dir, debug_images_dir, resampler_config);
+    if (debug_output)
+    {
+        auto debug_images_dir = workdir / "images";
+        create_directory(debug_images_dir);
+        debug_convert_resampled(resampled_positions_dir, debug_images_dir, resampler_config);
+    }
+    else
+    {
+        remove_all(workdir);
+    }
 }
 
 void debug_cluster_output(const std::filesystem::path& folder, const std::filesystem::path& output)

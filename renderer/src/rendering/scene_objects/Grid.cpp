@@ -37,14 +37,15 @@ void GridSceneObject::on_type_object_available(SceneObjectType& type)
     // No need to release the old one, as the entire type object was recreated if this was called
     vbo = our_type->acquire_vbo(size);
     uniform_buffer = our_type->get_resource_manager()->create_ubo(sizeof(UBO));
-    uniforms = our_type->get_resource_manager()->create_descriptor_set(our_type->get_instance_descriptor_set_layout());
+    uniforms =
+        our_type->get_resource_manager()->create_descriptor_set_ring(our_type->get_instance_descriptor_set_layout());
     uniforms.write_ubo(uniform_buffer, 0);
 }
 
 void GridSceneObject::tick()
 {
-    Eigen::Quaternionf q = rotation * Eigen::AngleAxisf(0.0001f, Eigen::Vector3f::UnitZ());
-    rotation = q;
+//    Eigen::Quaternionf q = rotation * Eigen::AngleAxisf(0.0001f, Eigen::Vector3f::UnitZ());
+//    rotation = q;
 
     UBO ubo{
         ( rotation

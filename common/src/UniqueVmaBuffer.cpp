@@ -12,7 +12,6 @@ UniqueVmaBuffer::UniqueVmaBuffer(VmaAllocator allocator, std::size_t size,
     };
 
     VmaAllocationCreateInfo alloc_info{
-        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
         .usage = memory_usage
     };
 
@@ -87,6 +86,9 @@ std::byte* UniqueVmaBuffer::map()
 
 void UniqueVmaBuffer::unmap()
 {
-    vmaUnmapMemory(allocator, allocation);
-    mapped = nullptr;
+    if (mapped)
+    {
+        vmaUnmapMemory(allocator, allocation);
+        mapped = nullptr;
+    }
 }

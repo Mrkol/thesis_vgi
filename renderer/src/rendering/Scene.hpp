@@ -8,6 +8,8 @@
 
 #include "ResourceManager.hpp"
 #include "Camera.hpp"
+#include "data_primitives/RingBuffer.hpp"
+#include "data_primitives/DescriptorSetRing.hpp"
 
 
 class SceneObjectBase;
@@ -26,9 +28,12 @@ public:
 
     void recreate_pipelines(PipelineCreationInfo info);
 
+    void reload_shaders();
+
     void add_object(std::unique_ptr<SceneObjectBase> object);
 
-    void tick();
+    void tick(float delta_seconds);
+    void record_pre_commands(vk::CommandBuffer cb);
     void record_commands(vk::CommandBuffer cb);
 
     Camera* debug_get_camera() { return &camera; }
@@ -41,7 +46,7 @@ private:
     vk::UniqueDescriptorSetLayout global_descriptor_set_layout;
 
     RingBuffer global_uniform_buffer;
-    UniformRing global_uniforms;
+    DescriptorSetRing global_uniforms;
 
     struct PerTypeInfo
     {

@@ -123,7 +123,7 @@ Resampler::Resampler(const ResamplerConfig& config)
 void Resampler::build_pipeline()
 {
     auto create_shader_module = [this]
-        (const std::vector<char>& source)
+        (std::vector<std::byte> source)
     {
         vk::ShaderModuleCreateInfo info{{}, source.size(), reinterpret_cast<const uint32_t*>(source.data())};
         return device->createShaderModuleUnique(info);

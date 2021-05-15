@@ -86,9 +86,6 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     // TODO: Proper device selection
     physical_device = vulkan_instance.enumeratePhysicalDevices().front();
 
-    auto props = physical_device.getProperties();
-    std::cout << "Max bound desc sets: " << props.limits.maxBoundDescriptorSets << std::endl;
-
     queue_family_indices = chose_queue_families(physical_device, display_surface.get());    
 
     // kostyl due to bad API design
@@ -108,8 +105,9 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     }
 
 
-    vk::PhysicalDeviceFeatures features {
-    };
+    vk::PhysicalDeviceFeatures features;
+
+    features.tessellationShader = true;
 
     // NOTE: newer vulkan implementations ignore the layers here
     device = physical_device.createDeviceUnique(vk::DeviceCreateInfo{
@@ -158,7 +156,12 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
         // 2 sets: one global, one per-model
         std::size_t max_sets = MAX_FRAMES_IN_FLIGHT * 2;
         std::array pool_sizes{
-            vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(max_objects * max_sets)}
+            vk::DescriptorPoolSize
+                {vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(max_objects * max_sets)},
+            vk::DescriptorPoolSize
+                {vk::DescriptorType::eCombinedImageSampler, static_cast<uint32_t>(max_objects * max_sets)},
+            vk::DescriptorPoolSize
+                {vk::DescriptorType::eStorageBuffer, static_cast<uint32_t>(max_objects * max_sets)}
         };
         global_descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
             {},
@@ -192,15 +195,15 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     }
 }
 
-void Renderer::render()
+void Renderer::render(float delta_seconds)
 {
     auto& data = per_inflight_frame_data[current_frame_idx];
 
     device->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
 
-    gui->tick();
+    gui->tick(delta_seconds);
     // Scene::tick can show debug imgui thingies
-    scene->tick();
+    scene->tick(delta_seconds);
     gui->render();
 
 
@@ -487,6 +490,8 @@ void Renderer::record_commands(std::size_t swapchain_idx)
 
     cb.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     {
+        scene->record_pre_commands(cb);
+
         std::array clear_colors{
             vk::ClearValue{vk::ClearColorValue{std::array{0.f, 0.f, 0.f, 1.f}}},
             vk::ClearValue{vk::ClearDepthStencilValue{1, 0}}
@@ -528,16 +533,48 @@ RingBuffer Renderer::create_ubo(std::size_t size)
     });
 }
 
-UniformRing Renderer::create_descriptor_set(vk::DescriptorSetLayout layout)
+RingBuffer Renderer::create_sbo(std::size_t size)
 {
-    return UniformRing({
+    return RingBuffer({
+        allocator, MAX_FRAMES_IN_FLIGHT, size,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        VMA_MEMORY_USAGE_CPU_TO_GPU
+    });
+}
+
+DescriptorSetRing Renderer::create_descriptor_set_ring(vk::DescriptorSetLayout layout)
+{
+    return DescriptorSetRing({
         device.get(), global_descriptor_pool.get(), MAX_FRAMES_IN_FLIGHT, layout
     });
+}
+
+vk::UniqueDescriptorSet Renderer::create_descriptor_set(vk::DescriptorSetLayout layout)
+{
+    return std::move(device->allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo{
+        global_descriptor_pool.get(), 1, &layout
+    }).front());
 }
 
 UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
 {
     return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
+VirtualTextureSet Renderer::create_svt(std::size_t gpu_cache_side_size,
+    std::size_t per_frame_update_limit, vk::Format format,
+    std::size_t min_mip, std::vector<std::vector<const std::byte*>> image_mip_data)
+{
+    auto cb = begin_single_time_commands();
+    VirtualTextureSet result(VirtualTextureSet::CreateInfo{
+        device.get(),
+        allocator, cb.get(), MAX_FRAMES_IN_FLIGHT,
+        gpu_cache_side_size, per_frame_update_limit, format,
+        min_mip, std::move(image_mip_data)
+    });
+    finish_single_time_commands(std::move(cb));
+
+    return result;
 }
 
 vk::UniqueCommandBuffer Renderer::begin_single_time_commands()
@@ -561,4 +598,14 @@ void Renderer::finish_single_time_commands(vk::UniqueCommandBuffer cb)
     }}, nullptr);
     // TODO: actual fences
     graphics_queue.waitIdle();
+}
+
+void Renderer::hotswap_shaders()
+{
+    scene->reload_shaders();
+    device->waitIdle();
+    scene->recreate_pipelines(PipelineCreationInfo{
+        swapchain_data.render_pass.get(),
+        swapchain_data.extent
+    });
 }
