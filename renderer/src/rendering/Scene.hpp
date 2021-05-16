@@ -21,6 +21,13 @@ struct PipelineCreationInfo
     vk::Extent2D extent;
 };
 
+enum class ViewMode : uint32_t
+{
+    Normal,
+    Wireframe,
+    SIZE
+};
+
 class Scene
 {
 public:
@@ -37,6 +44,9 @@ public:
     void record_commands(vk::CommandBuffer cb);
 
     Camera* debug_get_camera() { return &camera; }
+
+public:
+    ViewMode view_mode = ViewMode::Normal;
 
 private:
     IResourceManager* resource_manager;

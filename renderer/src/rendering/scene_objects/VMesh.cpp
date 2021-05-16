@@ -6,7 +6,7 @@
 
 static constexpr std::size_t CACHE_SIZE = 64;
 
-struct __attribute__ ((packed)) PerInstanceData
+struct __attribute__((packed)) PerInstanceData
 {
     Eigen::Vector4f side_mips;
     float mip;
@@ -105,13 +105,17 @@ void VMesh::tick()
         {
             current_cut.split(node);
         }
-        ImGui::SameLine();
+        else
+        {
+            ImGui::SameLine();
 
-        std::size_t mip = data.mip;
-        ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
-            ImGuiDataType_U64, &mip,
-            &node->min_tessellation, &node->max_tessellation);
-        current_cut.set_mip(node, mip);
+            std::size_t mip = data.mip;
+            ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
+                ImGuiDataType_U64, &mip,
+                &node->min_tessellation, &node->max_tessellation);
+            current_cut.set_mip(node, mip);
+
+        }
 
         ImGui::PopID();
     }
@@ -149,13 +153,11 @@ void VMesh::tick()
 
         for (auto&[node, data] : nodes_to_render)
         {
-            auto m = mip_transform(data.mip);
-            pidata->mip = m;
-            // TODO: proper neighbor lookup
-            pidata->side_mips.x() = m;
-            pidata->side_mips.y() = m;
-            pidata->side_mips.z() = m;
-            pidata->side_mips.w() = m;
+            pidata->mip = mip_transform(data.mip);
+            pidata->side_mips.x() = mip_transform(data.side_mip[0]);
+            pidata->side_mips.y() = mip_transform(data.side_mip[1]);
+            pidata->side_mips.z() = mip_transform(data.side_mip[2]);
+            pidata->side_mips.w() = mip_transform(data.side_mip[3]);
 
             pidata->param_space_offset.x() = node->offset.x();
             pidata->param_space_offset.y() = node->offset.y();
@@ -213,6 +215,11 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         {}, tess_eval_shader.size(), reinterpret_cast<const uint32_t*>(tess_eval_shader.data())
     });
 
+    // TODO: proper viewmode system for wireframes and lighting toggles
+//    auto geom_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
+//        {}, geom_shader.size(), reinterpret_cast<const uint32_t*>(geom_shader.data())
+//    });
+
     std::array shader_stages{
         vk::PipelineShaderStageCreateInfo
             {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"},
@@ -221,7 +228,9 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         vk::PipelineShaderStageCreateInfo
             {{}, vk::ShaderStageFlagBits::eTessellationControl, tess_ctrl_module.get(), "main"},
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eTessellationEvaluation, tess_eval_module.get(), "main"}
+            {{}, vk::ShaderStageFlagBits::eTessellationEvaluation, tess_eval_module.get(), "main"},
+//        vk::PipelineShaderStageCreateInfo
+//            {{}, vk::ShaderStageFlagBits::eGeometry, geom_module.get(), "main"}
     };
 
     vk::VertexInputBindingDescription vertex_input_binding_description
@@ -270,7 +279,7 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         {},
         /* depth clamp */ false,
         /* rasterizer discard */ false,
-        vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise,
+        vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise,
         /* depth bias */ false, 0, 0, 0,
         /* line width */ 1
     };
@@ -372,4 +381,5 @@ void VMeshSceneObjectType::load_shaders()
     fragment_shader = VkHelpers::read_shader("vgi.frag");
     tess_ctrl_shader = VkHelpers::read_shader("vgi.tesc");
     tess_eval_shader = VkHelpers::read_shader("vgi.tese");
+    geom_shader = VkHelpers::read_shader("vgi.geom");
 }

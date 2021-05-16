@@ -52,6 +52,7 @@ private:
     std::vector<std::byte> fragment_shader;
     std::vector<std::byte> tess_ctrl_shader;
     std::vector<std::byte> tess_eval_shader;
+    std::vector<std::byte> geom_shader;
 };
 
 MAKE_SCENE_OBJECT_TYPE_FACTORY(VMeshSceneObjectType);

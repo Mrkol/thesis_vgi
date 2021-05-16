@@ -85,7 +85,7 @@ public:
     std::vector<float> mip_errors;
 };
 
-class PatchRoot
+class AtlasPatch
 {
 public:
     struct CreateInfo
@@ -96,7 +96,7 @@ public:
         std::size_t max_mip;
     };
 
-    explicit PatchRoot(CreateInfo info);
+    explicit AtlasPatch(CreateInfo info);
 
     /**
      * used to reconstruct neighbors
@@ -111,7 +111,8 @@ public:
      *   3 . 1
      *     2
      */
-    std::array<PatchRoot*, 4> neighbors{nullptr};
+    std::array<AtlasPatch*, 4> neighbors{nullptr};
+    std::array<std::size_t, 4> neighbor_rotation_difference{0};
 
     std::unique_ptr<QuadtreeNode> root;
 
@@ -129,7 +130,7 @@ public:
         std::size_t patch_idx;
         std::size_t mip;
         std::array<std::size_t, 4> side_mip;
-        PatchRoot* root;
+        AtlasPatch* root;
     };
 
     std::vector<std::pair<QuadtreeNode*, CutElement>> dump() const;
@@ -138,6 +139,10 @@ public:
 
     void split(QuadtreeNode* node);
     void set_mip(QuadtreeNode* node, std::size_t mip);
+
+private:
+    std::vector<QuadtreeNode*> find_side_neighbors(QuadtreeNode* node, std::size_t side);
+    void recalculate_side_mips(QuadtreeNode* node, std::size_t node_side, std::size_t neighbor_side);
 
 private:
     std::unordered_map<QuadtreeNode*, CutElement> elements;
@@ -158,7 +163,7 @@ public:
     [[nodiscard]] std::size_t get_min_mip() const { return min_mip; }
 
 private:
-    std::vector<PatchRoot> patches;
+    std::vector<AtlasPatch> patches;
     std::size_t max_mip;
     std::size_t min_mip;
 };

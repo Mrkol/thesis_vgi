@@ -71,13 +71,16 @@ vec3 get_from_cache(uint page, vec2 in_page_uv)
         / float(object_ubo.cache_side_size)).xyz;
 }
 
-vec3 read_virtual_texture(uint idx, uint mip, vec2 uv)
+vec3 read_virtual_texture(uint idx, uint mip, vec2 uv, uvec2 page_offset)
 {
     uint page_count = (1u << mip) / (1u << object_ubo.min_mip);
 
-    // pages overlap, so we have choice here. Always chose the toppest-leftest page
-    // therefore clap the bottom-right border to the bottom-right page
-    uvec2 page_uv = clamp(uvec2(uv * page_count), 0, page_count - 1);
+    // Pick the leftest toppest page ignoring page overlap
+    uvec2 page_uv = uvec2(uv * page_count);
+    // Out of bounds on bottom edge and right edge are handled via page_offset
+    // Tessellated grid edge picking the wrong page is handled via page_offset as well
+    // offset is only applied at page boundary
+    page_uv -= page_offset * uvec2(1 - (uv * page_count - page_uv));
 
     uint page = PAGE_NONE;
 
@@ -108,11 +111,13 @@ void main()
     color = vec3(gl_TessCoord.xy, 1);
     out_mip = uint(instance_mip[0]);
 
+
     vec3 coords = read_virtual_texture(
         instance_index[0],
         uint(clamp(log2(instance_mip[0] / instance_param_space_size[0]),
             object_ubo.min_mip, object_ubo.min_mip + object_ubo.mip_level_count - 1)),
-        instance_param_space_offset[0] + gl_TessCoord.xy * instance_param_space_size[0]
+        instance_param_space_offset[0] + gl_TessCoord.xy * instance_param_space_size[0],
+        uvec2(gl_TessCoord.xy)
     );
 
     gl_Position = global_ubo.proj * global_ubo.view * object_ubo.model

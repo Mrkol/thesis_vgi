@@ -29,9 +29,9 @@ void main()
         gl_TessLevelInner[1] = instance_mip[0];
 
         gl_TessLevelOuter[0] = instance_side_mip[0].w;
-        gl_TessLevelOuter[1] = instance_side_mip[0].z;
+        gl_TessLevelOuter[1] = instance_side_mip[0].x;
         gl_TessLevelOuter[2] = instance_side_mip[0].y;
-        gl_TessLevelOuter[3] = instance_side_mip[0].x;
+        gl_TessLevelOuter[3] = instance_side_mip[0].z;
     }
 
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
