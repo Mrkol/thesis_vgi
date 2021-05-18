@@ -561,15 +561,15 @@ UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
     return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
-VirtualTextureSet Renderer::create_svt(std::size_t gpu_cache_side_size,
-    std::size_t per_frame_update_limit, vk::Format format,
-    std::size_t min_mip, std::vector<std::vector<const std::byte*>> image_mip_data)
+VirtualTextureSet
+Renderer::create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_update_limit, vk::Format format,
+    std::size_t format_multiplicity, std::size_t min_mip, std::vector<std::vector<const std::byte*>> image_mip_data)
 {
     auto cb = begin_single_time_commands();
     VirtualTextureSet result(VirtualTextureSet::CreateInfo{
         device.get(),
         allocator, cb.get(), MAX_FRAMES_IN_FLIGHT,
-        gpu_cache_side_size, per_frame_update_limit, format,
+        gpu_cache_side_size, per_frame_update_limit, format, format_multiplicity,
         min_mip, std::move(image_mip_data)
     });
     finish_single_time_commands(std::move(cb));

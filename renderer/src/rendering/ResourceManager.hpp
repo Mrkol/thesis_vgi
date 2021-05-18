@@ -17,13 +17,10 @@ public:
     virtual vk::UniqueDescriptorSet create_descriptor_set(vk::DescriptorSetLayout layout) = 0;
     virtual UniqueVmaBuffer create_vbo(std::size_t size) = 0;
 
-    virtual VirtualTextureSet create_svt(
-        std::size_t gpu_cache_side_size,
-        std::size_t per_frame_update_limit,
-        vk::Format format,
-        std::size_t min_mip,
-        std::vector<std::vector<const std::byte*>> image_mip_data
-    ) = 0;
+    virtual VirtualTextureSet
+    create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_update_limit, vk::Format format,
+        std::size_t format_multiplicity, std::size_t min_mip,
+        std::vector<std::vector<const std::byte*>> image_mip_data) = 0;
 
     virtual vk::UniqueCommandBuffer begin_single_time_commands() = 0;
     virtual void finish_single_time_commands(vk::UniqueCommandBuffer cb) = 0;

@@ -1,10 +1,12 @@
 #include "VMesh.hpp"
 
+#include <map>
 #include <VkHelpers.hpp>
 #include <imgui.h>
+#include <Utility.hpp>
 
 
-static constexpr std::size_t CACHE_SIZE = 64;
+static constexpr std::size_t CACHE_SIZE = 128;
 
 struct __attribute__((packed)) PerInstanceData
 {
@@ -64,7 +66,7 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     }
 
     vgis = irm->create_svt(CACHE_SIZE, atlas.get_patch_count(),
-        vk::Format::eR32G32B32Sfloat, atlas.get_min_mip(), std::move(gis));
+        vk::Format::eR32G32B32A32Sfloat, 2, atlas.get_min_mip(), std::move(gis));
 
     vk::DescriptorImageInfo descriptor_image_info{
         vgis.sampler(), vgis.view(), vk::ImageLayout::eShaderReadOnlyOptimal
@@ -79,9 +81,84 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     descriptors.write_sbo(vgis.get_indirection_table_sbo(), 2);
 }
 
-void VMesh::tick()
+void VMesh::tick(float delta_seconds, TickInfo tick_info)
 {
-    // TODO: optimize the cut
+    UBO raw_ubo{
+        ( rotation
+            * Eigen::Translation3f(position)
+            * Eigen::AlignedScaling3f(scale)
+        ).matrix(),
+        CACHE_SIZE,
+        static_cast<uint32_t>(atlas.get_min_mip()),
+        static_cast<uint32_t>(vgis.get_mip_level_count()),
+    };
+    ubo.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
+
+
+    {
+        current_cut = atlas.default_cut();
+
+        auto nodes = current_cut.get_nodes();
+
+        static constexpr float TARGET_POLYGONS_PER_PIXEL = 1.f/128.f;
+
+        auto wanted_mip =
+            [&raw_ubo, &tick_info](QuadtreeNode* node)
+            {
+                auto ss_size = float(tick_info.resolution.width * tick_info.resolution.height) *
+                    node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)
+                        * TARGET_POLYGONS_PER_PIXEL;
+                return std::size_t(std::clamp(std::log2(ss_size) / 2.f,
+                    float(node->min_tessellation), float(node->max_tessellation)));
+            };
+
+        auto priority =
+            [&wanted_mip](QuadtreeNode* node) -> int64_t
+            {
+                if (node->children[0] == nullptr)
+                {
+                    return -std::numeric_limits<int64_t>::max();
+                }
+                int64_t saved = 1 << (2*wanted_mip(node));
+                for (auto& child : node->children)
+                {
+                    saved -= 1 << (2*wanted_mip(child.get()));
+                }
+                return saved;
+            };
+
+        uint64_t polygon_limit = vgis.cache_size_pixels();
+        uint64_t total_polygons = 0;
+        std::multimap<int64_t, QuadtreeNode*, std::greater<>> queue;
+        for (auto & node : nodes)
+        {
+            auto mip = wanted_mip(node);
+            current_cut.set_mip(node, mip);
+            queue.emplace(priority(node), node);
+            total_polygons += 1 << (2*mip);
+        }
+
+        const std::size_t node_limit = nodes.size() * 3;
+
+        while (current_cut.size() < node_limit
+//            && total_polygons > polygon_limit
+            && !queue.empty() && queue.begin()->first > 0)
+        {
+            auto node = queue.begin()->second;
+            total_polygons -= queue.begin()->first;
+            queue.erase(queue.begin());
+            current_cut.split(node);
+            for (auto& child : node->children)
+            {
+                if (child)
+                {
+                    queue.emplace(priority(child.get()), child.get());
+                }
+            }
+        }
+    }
+
+
 
     auto nodes_to_render = current_cut.dump();
 
@@ -95,31 +172,34 @@ void VMesh::tick()
 
 
     // TODO: remove, debug
-    ImGui::Begin("VMesh");
-    std::size_t kek = 0;
-    for (auto&[node, data] : nodes_to_render)
-    {
-        ImGui::PushID(std::to_string(kek).c_str());
-
-        if (ImGui::Button("X", ImVec2{20, 20}))
-        {
-            current_cut.split(node);
-        }
-        else
-        {
-            ImGui::SameLine();
-
-            std::size_t mip = data.mip;
-            ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
-                ImGuiDataType_U64, &mip,
-                &node->min_tessellation, &node->max_tessellation);
-            current_cut.set_mip(node, mip);
-
-        }
-
-        ImGui::PopID();
-    }
-    ImGui::End();
+//    ImGui::Begin("VMesh");
+//    std::size_t kek = 0;
+//    for (auto&[node, data] : nodes_to_render)
+//    {
+//        ImGui::PushID(std::to_string(kek).c_str());
+//
+//        if (ImGui::Button("X", ImVec2{20, 20}))
+//        {
+//            current_cut.split(node);
+//        }
+//        else
+//        {
+//            ImGui::SameLine();
+//
+//            std::size_t mip = data.mip;
+//            ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
+//                ImGuiDataType_U64, &mip,
+//                &node->min_tessellation, &node->max_tessellation);
+//            current_cut.set_mip(node, mip);
+//
+//            ImGui::SameLine();
+//            ImGui::Text(std::to_string(
+//                node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)).c_str());
+//        }
+//
+//        ImGui::PopID();
+//    }
+//    ImGui::End();
 
     for (auto&[node, data] : nodes_to_render)
     {
@@ -131,19 +211,6 @@ void VMesh::tick()
             node->offset.y(),
             node->size
         );
-    }
-
-    {
-        UBO raw_ubo{
-            ( rotation
-                * Eigen::Translation3f(position)
-                * Eigen::AlignedScaling3f(scale)
-            ).matrix(),
-            CACHE_SIZE,
-            static_cast<uint32_t>(atlas.get_min_mip()),
-            static_cast<uint32_t>(vgis.get_mip_level_count()),
-        };
-        ubo.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
     }
 
     {

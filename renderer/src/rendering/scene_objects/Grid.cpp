@@ -42,7 +42,7 @@ void GridSceneObject::on_type_object_available(SceneObjectType& type)
     uniforms.write_ubo(uniform_buffer, 0);
 }
 
-void GridSceneObject::tick()
+void GridSceneObject::tick(float delta_seconds, TickInfo tick_info)
 {
 //    Eigen::Quaternionf q = rotation * Eigen::AngleAxisf(0.0001f, Eigen::Vector3f::UnitZ());
 //    rotation = q;

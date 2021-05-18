@@ -31,7 +31,7 @@ layout(set = 1, binding = 0) uniform ObjectUBO {
     uint mip_level_count;
 } object_ubo;
 
-layout(set = 1, binding = 1) uniform sampler2D geometry_image;
+layout(set = 1, binding = 1) uniform sampler2DArray geometry_image;
 
 layout(std430, set = 1, binding = 2) readonly buffer ObjectSBO {
     // AFAIK we can't be more specific about how data is layed out here :(
@@ -55,23 +55,33 @@ uint read_indirection(uint idx, uint size, uint x, uint y)
 
 const uint PAGE_NONE = ~uint(0);
 
+struct Pixel
+{
+    vec3 position;
+    vec2 uv;
+    vec3 normal;
+};
+
 /**
  * page -- page index (row-major)
  * in_page_uv -- normalized coords of requested data
  */
-vec3 get_from_cache(uint page, vec2 in_page_uv)
+Pixel get_from_cache(uint page, vec2 in_page_uv)
 {
     vec2 page_in_cache_uv = vec2(
         float(page % object_ubo.cache_side_size),
         float(page / object_ubo.cache_side_size));
 
     float psz = float((1 << object_ubo.min_mip) + 1);
-    return texture(geometry_image,
-        (page_in_cache_uv + (in_page_uv * (psz - 1) + 0.5) / psz)
-        / float(object_ubo.cache_side_size)).xyz;
+
+    vec2 uv = (page_in_cache_uv + (in_page_uv * (psz - 1) + 0.5) / psz) / float(object_ubo.cache_side_size);
+
+    vec4 a = texture(geometry_image, vec3(uv, 0));
+    vec4 b = texture(geometry_image, vec3(uv, 1));
+    return Pixel(a.xyz, vec2(a.w, b.x), b.yzw);
 }
 
-vec3 read_virtual_texture(uint idx, uint mip, vec2 uv, uvec2 page_offset)
+Pixel read_virtual_texture(uint idx, uint mip, vec2 uv, uvec2 page_offset)
 {
     uint page_count = (1u << mip) / (1u << object_ubo.min_mip);
 
@@ -112,7 +122,7 @@ void main()
     out_mip = uint(instance_mip[0]);
 
 
-    vec3 coords = read_virtual_texture(
+    Pixel p = read_virtual_texture(
         instance_index[0],
         uint(clamp(log2(instance_mip[0] / instance_param_space_size[0]),
             object_ubo.min_mip, object_ubo.min_mip + object_ubo.mip_level_count - 1)),
@@ -120,6 +130,5 @@ void main()
         uvec2(gl_TessCoord.xy)
     );
 
-    gl_Position = global_ubo.proj * global_ubo.view * object_ubo.model
-        * vec4(coords, 1.0);
+    gl_Position = global_ubo.proj * global_ubo.view * object_ubo.model * vec4(p.position, 1.0);
 }

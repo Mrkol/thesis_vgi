@@ -10,12 +10,21 @@ static constexpr uint32_t OBJECT_DESCRIPTOR_SET_BINDING = 1;
 class SceneObjectTypeFactory;
 class SceneObjectType;
 
+
+
+struct TickInfo
+{
+    const Eigen::Matrix4f& view;
+    const Eigen::Matrix4f& proj;
+    vk::Extent2D resolution;
+};
+
 class SceneObjectBase
 {
 public:
     virtual void on_type_object_available(SceneObjectType& type) = 0;
 
-    virtual void tick() {};
+    virtual void tick(float delta_seconds, TickInfo tick_info) {};
 
     virtual void record_pre_commands(vk::CommandBuffer cb) {};
 
@@ -40,7 +49,7 @@ class SceneObjectType
 public:
     explicit SceneObjectType(IResourceManager* irm) : resource_manager(irm) {};
 
-    virtual void tick() {};
+    virtual void tick(float delta_seconds, TickInfo tick_info) {};
 
     virtual void record_commands(vk::CommandBuffer cb) {};
 

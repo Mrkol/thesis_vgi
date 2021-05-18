@@ -4,6 +4,7 @@
 #include <fstream>
 #include <utility>
 #include <deque>
+#include <imgui.h>
 
 #include "Utility.hpp"
 
@@ -12,9 +13,9 @@ GeometryImage::GeometryImage(const std::filesystem::path& path)
 {
     std::ifstream in{path, std::ios_base::binary};
 
-    data.resize(file_size(path) / sizeof(Eigen::Vector3f));
+    data.resize(file_size(path) / sizeof(data[0]));
     in.read(reinterpret_cast<char*>(data.data()),
-        static_cast<std::streamsize>(data.size() * sizeof(Eigen::Vector3f)));
+        static_cast<std::streamsize>(data.size() * sizeof(data[0])));
 
     width = static_cast<std::size_t>(std::sqrt(data.size()));
 }
@@ -22,7 +23,7 @@ GeometryImage::GeometryImage(const std::filesystem::path& path)
 Eigen::Vector3f& GeometryImage::operator ()(std::size_t x, std::size_t y)
 {
     AD_HOC_ASSERT(x < width && y < width, "out of bounds");
-    return data[y*width + x];
+    return data[y*width + x].position;
 }
 
 const Eigen::Vector3f& GeometryImage::operator ()(std::size_t x, std::size_t y) const
@@ -141,13 +142,45 @@ QuadtreeNode::QuadtreeNode(QuadtreeNode::CreateInfo info)
     }
 }
 
+float QuadtreeNode::projected_screenspace_area(
+    Eigen::Matrix4f model, Eigen::Matrix4f view, Eigen::Matrix4f projection) const
+{
+    using namespace Eigen;
+    Vector3f d = bounding_box_end - bounding_box_start;
+
+    Vector4f o = view * model * bounding_box_start.homogeneous();
+    Vector4f dx = view * model * Vector4f(d.x(), 0, 0, 0);
+    Vector4f dy = view * model * Vector4f(0, d.y(), 0, 0);
+    Vector4f dz = view * model * Vector4f(0, 0, d.z(), 0);
+
+    Vector2f min{std::numeric_limits<float>::max(), std::numeric_limits<float>::max()};
+    Vector2f max = -min;
+    for (std::size_t i = 0; i < 8; ++i)
+    {
+        Vector4f p = projection * (o + dx*!!(i & 1) + dy*!!(i & 2) + dz*!!(i & 4));
+        Vector2f s{p.x() / p.w(), p.y() / p.w()};
+        min = min.cwiseMin(s);
+        max = max.cwiseMax(s);
+    }
+
+    if ((max.array() < -1).any() || (min.array() > 1).any())
+    {
+        return 0;
+    }
+
+    max = max.cwiseMin(Vector2f{1, 1});
+    min = min.cwiseMax(Vector2f{-1, -1});
+
+    return std::abs((max - min).prod())/4;
+}
+
 AtlasPatch::AtlasPatch(CreateInfo info)
 {
     gis.reserve(info.max_mip - info.min_mip + 1);
     for (std::size_t i = info.min_mip; i <= info.max_mip; ++i)
     {
         gis.emplace_back(
-            info.images_folder / "positions" / (std::string{info.name_prefix} + ":" + std::to_string(i))
+            info.images_folder / (std::string{info.name_prefix} + ":" + std::to_string(i))
         );
     }
 
@@ -182,7 +215,7 @@ HierarchicalAtlas::HierarchicalAtlas(std::filesystem::path images_folder)
     std::unordered_set<std::string> prefixes;
     min_mip = 1000; // 2^1000 is a lot
     max_mip = 0;
-    for (auto& entry : std::filesystem::directory_iterator(images_folder / "positions"))
+    for (auto& entry : std::filesystem::directory_iterator(images_folder))
     {
         auto name = entry.path().filename().string();
         auto pos = name.rfind(':');
@@ -508,3 +541,13 @@ void HierarchyCut::recalculate_side_mips(QuadtreeNode* node, std::size_t node_si
     elements.at(node).side_mip[node_side] = node->min_tessellation + min;
 }
 
+std::vector<QuadtreeNode*> HierarchyCut::get_nodes() const
+{
+    std::vector<QuadtreeNode*> result;
+    result.reserve(elements.size());
+    for (auto&[node, _] : elements)
+    {
+        result.push_back(node);
+    }
+    return result;
+}

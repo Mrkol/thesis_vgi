@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include <UniqueVmaBuffer.hpp>
+#include <UniqueVmaImage.hpp>
+
 #include "../clustering/Quadrangulation.hpp"
 #include "../Parametrization.hpp"
 
@@ -24,7 +28,7 @@ class Resampler
 public:
     explicit Resampler(const ResamplerConfig& config);
 
-    std::vector<std::array<float, 3>> resample(const QuadPatch& patch,
+    std::vector<float> resample(const QuadPatch& patch,
         const std::vector<MappingElement>& mapping, std::size_t thread_idx);
 
 private:
@@ -33,32 +37,35 @@ private:
         uint32_t triangle_indices_count, uint32_t line_indices_count, std::size_t thread_idx);
 
 private:
+    static constexpr std::size_t ATTACHMENT_COUNT = 2;
+
     struct PerThreadData
     {
         vk::Queue queue;
 
+        std::array<UniqueVmaBuffer, ATTACHMENT_COUNT> image_staging;
+
         // Order of those fields is important due to destruction order!
-        vk::UniqueDeviceMemory image_memory;
-        vk::UniqueImage image;
-        vk::UniqueImageView image_view;
+        std::array<UniqueVmaImage, ATTACHMENT_COUNT> images;
+        std::array<vk::UniqueImageView, ATTACHMENT_COUNT> image_views;
         vk::UniqueFramebuffer framebuffer;
 
         vk::UniqueCommandBuffer command_buffer;
-
-        vk::UniqueFence rendered_fence;
     };
 
     static constexpr vk::Format OUTPUT_FORMAT = vk::Format::eR32G32B32A32Sfloat;
+    static constexpr std::size_t OUTPUT_PIXEL_SIZE = sizeof(float) * 4;
 
 private:
     vk::UniqueInstance vk_instance;
     vk::PhysicalDevice physical_device;
     vk::UniqueDevice device;
+    VmaAllocator allocator;
+    std::unique_ptr<void, void(*)(void*)> deferred_allocator_destroy{nullptr, nullptr};
 
     uint32_t resampling_resolution;
 
-    vk::UniqueDeviceMemory  uniform_buffer_memory;
-    vk::UniqueBuffer uniform_buffer;
+    UniqueVmaBuffer uniform_buffer;
 
     vk::UniqueDescriptorPool descriptor_pool;
     vk::DescriptorSet descriptor_set;

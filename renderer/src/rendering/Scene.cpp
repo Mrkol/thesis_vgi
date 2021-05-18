@@ -36,8 +36,8 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
     global_uniforms.write_ubo(global_uniform_buffer, 0);
 
     add_object(std::make_unique<GridSceneObject>(10));
-    auto vmesh = std::make_unique<VMesh>("../../models/nature_snow/resampled");
-    vmesh->scale.setConstant(0.0025f);
+    auto vmesh = std::make_unique<VMesh>("../converter/resampled");
+    vmesh->scale.setConstant(0.01f);
     vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
     add_object(std::move(vmesh));
 }
@@ -64,7 +64,7 @@ void Scene::reload_shaders()
 void Scene::tick(float delta_seconds)
 {
     GlobalUBO ubo{
-        camera.view(), //Eigen::Matrix4f::Identity() * 0.5f
+        camera.view(),
         perspective(static_cast<float>(EIGEN_PI/2),
             static_cast<float>(pipeline_creation_info.extent.width)
                 /static_cast<float>(pipeline_creation_info.extent.height),
@@ -73,15 +73,13 @@ void Scene::tick(float delta_seconds)
     global_uniform_buffer.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
 
 
-
-
     for (auto& kv : object_types)
     {
         auto&[type, _, instances] = kv.second;
-        type->tick();
+        type->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info.extent});
         for (auto instance : instances)
         {
-            instance->tick();
+            instance->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info.extent});
         }
 
         std::erase_if(instances, std::not1(std::mem_fn(&SceneObjectBase::is_alive)));

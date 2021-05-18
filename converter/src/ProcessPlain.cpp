@@ -259,9 +259,6 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
     auto resampled_dir = output_dir / "resampled";
     create_directory(resampled_dir);
 
-    auto resampled_positions_dir = resampled_dir / "positions";
-    create_directory(resampled_positions_dir);
-
     {
         ScopedTimer timer("resampling");
 
@@ -283,8 +280,8 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
             for (const auto& entry : std::filesystem::directory_iterator{clusters_path})
             {
                 pool.submit(
-                    [quad_path = entry.path(), &quad_info_path, &resampled_positions_dir, &resampler,
-                        &read_quad, &parametrization_dir, mip_level]
+                    [quad_path = entry.path(), &quad_info_path, &resampled_dir,
+                        &resampler, &read_quad, &parametrization_dir, mip_level]
                         ()
                     {
                         auto quad = read_quad(quad_path, quad_info_path / quad_path.filename());
@@ -297,11 +294,9 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
 
                         auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
 
-                        std::ofstream out{
-                            resampled_positions_dir
-                                / (quad_path.filename().string() + ":" + std::to_string(mip_level)),
-                            std::ios_base::binary
-                        };
+                        std::string filename = quad_path.filename().string() + ":" + std::to_string(mip_level);
+
+                        std::ofstream out{resampled_dir / filename, std::ios_base::binary};
 
                         out.write(reinterpret_cast<const char*>(result.data()),
                             static_cast<std::streamsize>(result.size() * sizeof(result[0])));
@@ -314,7 +309,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
     {
         auto debug_images_dir = workdir / "images";
         create_directory(debug_images_dir);
-        debug_convert_resampled(resampled_positions_dir, debug_images_dir, resampler_config);
+        debug_convert_resampled(resampled_dir, debug_images_dir, resampler_config);
     }
     else
     {
@@ -345,7 +340,6 @@ void debug_cluster_output(const std::filesystem::path& folder, const std::filesy
         {
             tri.a.u = tri.b.u = tri.c.u = static_cast<FloatingNumber>(patch_idx);
             tri.a.v = tri.b.v = tri.c.v = static_cast<FloatingNumber>(patch_count);
-            tri.a.w = tri.b.w = tri.c.w = 0;
             clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
         }
 
@@ -405,7 +399,6 @@ void debug_parametrization_output(const std::filesystem::path& quad_folder,
             tri.c.u = std::get<0>(m_c);
             tri.c.v = std::get<1>(m_c);
 
-            tri.a.w = tri.b.w = tri.c.w = 0;
             clustered.write(reinterpret_cast<char*>(&tri), sizeof(tri));
         }
 
@@ -420,7 +413,7 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
 
     for (const auto& entry : std::filesystem::directory_iterator(resampled_dir))
     {
-        std::vector<std::array<float, 3>> data{file_size(entry.path()) / sizeof(data[0])};
+        std::vector<std::array<float, 8>> data{file_size(entry.path()) / sizeof(data[0])};
         {
             std::ifstream input{entry.path(), std::ios_base::binary};
             input.read(reinterpret_cast<char*>(data.data()),
@@ -447,7 +440,7 @@ void debug_convert_resampled(const std::filesystem::path& resampled_dir, const s
             }
         }
 
-        auto res = (1 << config.log_resolution) + 1;
+        auto res = std::size_t(std::sqrt(data.size()));
 
         std::ofstream output
             {output_dir / (entry.path().filename().string() + ".ppm"), std::ios_base::binary};

@@ -3,11 +3,15 @@
 
 
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 uv;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out1;
+layout(location = 1) out vec4 out2;
 
 
 void main()
 {
-    outColor = vec4(position, 0);
+    out1 = vec4(position, uv.x);
+    out2 = vec4(uv.y, normal);
 }

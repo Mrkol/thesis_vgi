@@ -1,6 +1,5 @@
 #include "ToPlainConverters.hpp"
 
-#include <fstream>
 #include <sstream>
 #include <array>
 #include <string>

@@ -16,7 +16,7 @@ public:
 
     void on_type_object_available(SceneObjectType& type) override;
 
-    void tick() override;
+    void tick(float delta_seconds, TickInfo tick_info) override;
 
     void record_commands(vk::CommandBuffer cb) override;
     [[nodiscard]] const SceneObjectTypeFactory& get_scene_object_type_factory() const override;

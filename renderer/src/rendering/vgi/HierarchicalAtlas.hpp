@@ -9,8 +9,13 @@
 #include <vulkan/vulkan.hpp>
 #include <Eigen/Dense>
 
-
-static_assert(sizeof(Eigen::Vector3f) == 3*sizeof(float));
+struct __attribute__((packed)) GeometryImageVertex
+{
+    Eigen::Vector3f position;
+    Eigen::Vector2f uv;
+    Eigen::Vector3f normal;
+};
+static_assert(sizeof(GeometryImageVertex) == 8*sizeof(float));
 
 /**
  * Only squares supported
@@ -28,10 +33,10 @@ public:
     const Eigen::Vector3f& operator() (std::size_t x, std::size_t y) const;
     [[nodiscard]] std::size_t size() const { return  width; }
 
-    [[nodiscard]] const Eigen::Vector3f* get_data() const { return data.data(); }
+    [[nodiscard]] const GeometryImageVertex* get_data() const { return data.data(); }
 
 private:
-    std::vector<Eigen::Vector3f> data;
+    std::vector<GeometryImageVertex> data;
     std::size_t width{};
 };
 
@@ -50,7 +55,7 @@ public:
     };
     explicit QuadtreeNode(CreateInfo info);
 
-
+    [[nodiscard]] float projected_screenspace_area(Eigen::Matrix4f model, Eigen::Matrix4f view, Eigen::Matrix4f projection) const;
 
 
     /**
@@ -134,6 +139,7 @@ public:
     };
 
     std::vector<std::pair<QuadtreeNode*, CutElement>> dump() const;
+    std::vector<QuadtreeNode*> get_nodes() const;
     const CutElement& get_data(QuadtreeNode* node) const;
     std::size_t size() const { return elements.size(); }
 

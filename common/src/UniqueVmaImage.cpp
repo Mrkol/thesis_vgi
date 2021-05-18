@@ -2,12 +2,15 @@
 
 
 UniqueVmaImage::UniqueVmaImage(VmaAllocator allocator, vk::Format format, vk::Extent2D extent,
-    vk::ImageTiling tiling, vk::ImageUsageFlags image_usage, VmaMemoryUsage memory_usage)
+    vk::ImageTiling tiling, vk::ImageUsageFlags image_usage, VmaMemoryUsage memory_usage, uint32_t layers)
     : allocator{allocator}
 {
     vk::ImageCreateInfo image_info{
         {}, vk::ImageType::e2D, format, vk::Extent3D{extent.width, extent.height, 1},
-        1, 1, vk::SampleCountFlagBits::e1, tiling, image_usage, vk::SharingMode::eExclusive
+        1,
+        layers,
+        vk::SampleCountFlagBits::e1, tiling, image_usage, vk::SharingMode::eExclusive,
+        0, nullptr, vk::ImageLayout::eUndefined
     };
     VmaAllocationCreateInfo alloc_info{
         .usage = memory_usage

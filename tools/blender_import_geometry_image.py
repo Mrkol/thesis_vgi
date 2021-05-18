@@ -3,9 +3,10 @@ import struct
 import os
 import math
 
+PIXEL_SIZE = 8 * 4
 
 def read_gi(context, filepath, collection):
-    freq = int(math.sqrt(os.path.getsize(filepath)//12))
+    freq = int(math.sqrt(os.path.getsize(filepath)//PIXEL_SIZE))
     with open(filepath, 'rb') as f:
         me = bpy.data.meshes.new('ImporedGIMesh')
         ob = bpy.data.objects.new('ImportedGI', me)
@@ -15,9 +16,9 @@ def read_gi(context, filepath, collection):
 
         vertices = []
         triangles = []
-        data = f.read(4 * 3 * freq*freq)
+        data = f.read(PIXEL_SIZE * freq*freq)
         for i in range(freq*freq):
-            vertices.append(struct.unpack('fff', data[4*3*i:4*3*(i+1)]))
+            vertices.append(struct.unpack('fff', data[PIXEL_SIZE*i:PIXEL_SIZE*i + 3*4]))
 
         for j in range(freq - 1):
             for i in range(freq - 1):

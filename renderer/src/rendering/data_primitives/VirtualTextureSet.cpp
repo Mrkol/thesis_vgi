@@ -21,9 +21,10 @@ VirtualTextureSet::VirtualTextureSet(VirtualTextureSet::CreateInfo info)
     , image_mip_data(std::move(info.image_mip_data))
     , cache_side_size(info.gpu_cache_side_size)
     , per_frame_update_limit(info.per_frame_update_limit)
+    , format_multiplicity(info.format_multiplicity)
 {
     staging_buffer = RingBuffer({info.allocator, info.multiple_buffer_size,
-        per_frame_update_limit * page_size(),
+        format_multiplicity * per_frame_update_limit * page_size(),
         vk::BufferUsageFlagBits::eTransferSrc, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     indirection_tables = IndirectionTables(
@@ -40,7 +41,7 @@ VirtualTextureSet::VirtualTextureSet(VirtualTextureSet::CreateInfo info)
             static_cast<uint32_t>(info.gpu_cache_side_size * page_side_size),
             static_cast<uint32_t>(info.gpu_cache_side_size * page_side_size)},
         vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        VmaMemoryUsage::VMA_MEMORY_USAGE_GPU_ONLY);
+        VmaMemoryUsage::VMA_MEMORY_USAGE_GPU_ONLY, info.format_multiplicity);
 
     cache_lifetimes.resize(cache_side_size*cache_side_size, 0);
     cache_state.resize(cache_lifetimes.size());
@@ -57,9 +58,9 @@ VirtualTextureSet::VirtualTextureSet(VirtualTextureSet::CreateInfo info)
     }
 
     cache_view = info.device.createImageViewUnique(vk::ImageViewCreateInfo{
-        {}, cache.get(), vk::ImageViewType::e2D, info.format, {},
+        {}, cache.get(), vk::ImageViewType::e2DArray, info.format, {},
         vk::ImageSubresourceRange{
-            vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
+            vk::ImageAspectFlagBits::eColor, 0, 1, 0, static_cast<uint32_t>(format_multiplicity)
         }
     });
 
@@ -95,7 +96,7 @@ void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::si
         return;
     }
 
-    if (staging_targets.size() >= per_frame_update_limit)
+    if (staging_targets.size() >= per_frame_update_limit * format_multiplicity)
     {
         return;
     }
@@ -112,38 +113,46 @@ void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::si
     indirection_tables(info.image_index, info.image_mip - min_mip, info.x, info.y) = lru;
     cache_lifetimes[lru] = gen;
 
-    std::size_t staging_offset = staging_targets.size() * page_size();
-    staging_targets.emplace_back(vk::BufferImageCopy{
-        staging_buffer.current_offset() + staging_offset,
-        static_cast<uint32_t>(page_side_size), static_cast<uint32_t>(page_side_size),
-        vk::ImageSubresourceLayers{
-            vk::ImageAspectFlagBits::eColor,
-            0, 0, 1
-        },
-        vk::Offset3D{
-            static_cast<int32_t>(lru % cache_side_size * page_side_size),
-            static_cast<int32_t>(lru / cache_side_size * page_side_size),
-            0
-        },
-        vk::Extent3D{
-            static_cast<uint32_t>(page_side_size), static_cast<uint32_t>(page_side_size), 1
-        }
-    });
-
-    // -1 here is for the overlap
-    std::byte* dst = staging_buffer.get_current().data() + staging_offset;
-
-    std::size_t gi_offset =
-        info.y * (page_side_size - 1) * pixel_size * mip_to_size(info.image_mip)
-            + info.x * (page_side_size - 1) * pixel_size;
-
-    const std::byte* src = image_mip_data.at(info.image_index).at(info.image_mip - min_mip) + gi_offset;
-
-    for (std::size_t y = 0; y < page_side_size; ++y)
+    for (std::size_t i = 0; i < format_multiplicity; ++i)
     {
-        std::memcpy(dst, src, page_side_size * pixel_size);
-        dst += pixel_size * page_side_size;
-        src += pixel_size * mip_to_size(info.image_mip);
+        std::size_t staging_offset = staging_targets.size() * page_size();
+        staging_targets.emplace_back(vk::BufferImageCopy{
+            staging_buffer.current_offset() + staging_offset,
+            static_cast<uint32_t>(page_side_size), static_cast<uint32_t>(page_side_size),
+            vk::ImageSubresourceLayers{
+                vk::ImageAspectFlagBits::eColor,
+                0, static_cast<uint32_t>(i), 1
+            },
+            vk::Offset3D{
+                static_cast<int32_t>(lru % cache_side_size * page_side_size),
+                static_cast<int32_t>(lru / cache_side_size * page_side_size),
+                0
+            },
+            vk::Extent3D{
+                static_cast<uint32_t>(page_side_size), static_cast<uint32_t>(page_side_size), 1
+            }
+        });
+
+        // -1 here is for the overlap
+        std::byte* dst = staging_buffer.get_current().data() + staging_offset;
+
+        std::size_t gi_offset =
+            info.y * (page_side_size - 1) * (pixel_size * format_multiplicity) * mip_to_size(info.image_mip)
+                + info.x * (page_side_size - 1) * (pixel_size * format_multiplicity);
+
+        const std::byte* src = image_mip_data.at(info.image_index).at(info.image_mip - min_mip) + gi_offset;
+
+        for (std::size_t y = 0; y < page_side_size; ++y)
+        {
+            auto row_src = src;
+            for (std::size_t x = 0; x < page_side_size; ++x)
+            {
+                std::memcpy(dst, row_src + i*pixel_size, pixel_size);
+                row_src += format_multiplicity * pixel_size;
+                dst += pixel_size;
+            }
+            src += format_multiplicity * pixel_size * mip_to_size(info.image_mip);
+        }
     }
 }
 
@@ -213,7 +222,7 @@ void VirtualTextureSet::transfer_layout(vk::CommandBuffer cb,
         VK_QUEUE_FAMILY_IGNORED,
         cache.get(),
         vk::ImageSubresourceRange{
-            vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
+            vk::ImageAspectFlagBits::eColor, 0, 1, 0, static_cast<uint32_t>(format_multiplicity),
         }
     };
     cb.pipelineBarrier(

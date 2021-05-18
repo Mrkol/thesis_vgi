@@ -46,13 +46,9 @@ public:
     DescriptorSetRing create_descriptor_set_ring(vk::DescriptorSetLayout layout) override;
     vk::UniqueDescriptorSet create_descriptor_set(vk::DescriptorSetLayout layout) override;
     UniqueVmaBuffer create_vbo(std::size_t size) override;
-    VirtualTextureSet create_svt(
-        std::size_t gpu_cache_side_size,
-        std::size_t per_frame_update_limit,
-        vk::Format format,
-        std::size_t min_mip,
-        std::vector<std::vector<const std::byte*>> image_mip_data
-    ) override;
+    VirtualTextureSet create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_update_limit, vk::Format format,
+        std::size_t format_multiplicity, std::size_t min_mip,
+        std::vector<std::vector<const std::byte*>> image_mip_data) override;
 
     vk::UniqueCommandBuffer begin_single_time_commands() override;
     void finish_single_time_commands(vk::UniqueCommandBuffer cb) override;

@@ -1,22 +1,24 @@
 #include "Resampler.hpp"
 
+
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 #include <fstream>
+#include <Eigen/Dense>
 
 #include "../DataTypes.hpp"
 #include "VkHelpers.hpp"
 
 
-struct Vertex
+struct __attribute__((packed)) Vertex
 {
-    struct Mapped
-    {
-        float m_x, m_y;
-    } mapped;
-    struct Position
-    {
-        float x, y, z;
-    } position;
+    Eigen::Vector2f mapped_position;
+    Eigen::Vector3f position;
+    Eigen::Vector3f normal;
+    Eigen::Vector2f uv;
 };
+
+static_assert(sizeof(Vertex) == 10*sizeof(float));
 
 struct UniformBufferObject
 {
@@ -28,9 +30,13 @@ constexpr vk::VertexInputBindingDescription vertex_input_binding_description
 
 constexpr std::array vertex_input_attribute_descriptions{
     vk::VertexInputAttributeDescription
-        {/* location */ 0, /* binding */ 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, mapped)},
+        {/* location */ 0, /* binding */ 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, mapped_position)},
     vk::VertexInputAttributeDescription
-        {/* location */ 1, /* binding */ 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)}
+        {/* location */ 1, /* binding */ 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)},
+    vk::VertexInputAttributeDescription
+        {/* location */ 2, /* binding */ 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)},
+    vk::VertexInputAttributeDescription
+        {/* location */ 3, /* binding */ 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv)},
 };
 
 Resampler::Resampler(const ResamplerConfig& config)
@@ -76,7 +82,6 @@ Resampler::Resampler(const ResamplerConfig& config)
     for (std::size_t idx = 0; idx < config.thread_count; ++idx)
     {
         per_thread_datum[idx].queue = device->getQueue(uint32_t(queue_idx), uint32_t(idx));
-        per_thread_datum[idx].rendered_fence = device->createFenceUnique(vk::FenceCreateInfo{});
     }
 
 
@@ -86,35 +91,34 @@ Resampler::Resampler(const ResamplerConfig& config)
 
     for (auto& data : per_thread_datum)
     {
-        // TODO: Most GPUs dont support ImageTiling::eLinear with ImageUsageFlagBits::eColorAttachment!!!
-        // gotta split it into 2 buffers and use one as a record_commands target and the other one as GPU-CPU transfer buffer
-        data.image = device->createImageUnique(vk::ImageCreateInfo{
-            {}, vk::ImageType::e2D, OUTPUT_FORMAT,
-            /* extents */ {resampling_resolution, resampling_resolution, 1},
-            /* mip levels */ 1, /* array layers */ 1, vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eLinear, vk::ImageUsageFlagBits::eColorAttachment
-        });
+        std::array<vk::ImageView, ATTACHMENT_COUNT> views;
 
-        auto mem_reqs = device->getImageMemoryRequirements(data.image.get());
-        data.image_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
-            mem_reqs.size,
-            VkHelpers::find_memory_type(physical_device, mem_reqs.memoryTypeBits,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-        });
+        for (std::size_t i = 0; i < data.image_views.size(); ++i)
+        {
+            data.image_staging[i] = UniqueVmaBuffer(allocator,
+                resampling_resolution * resampling_resolution * OUTPUT_PIXEL_SIZE,
+                vk::BufferUsageFlagBits::eTransferDst, VMA_MEMORY_USAGE_GPU_TO_CPU);
 
-        device->bindImageMemory(data.image.get(), data.image_memory.get(), 0);
+            data.images[i] = UniqueVmaImage(allocator, OUTPUT_FORMAT, {resampling_resolution, resampling_resolution},
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
-        data.image_view = device->createImageViewUnique(vk::ImageViewCreateInfo{
-            {}, data.image.get(), vk::ImageViewType::e2D, OUTPUT_FORMAT, {},
-            vk::ImageSubresourceRange{
-                vk::ImageAspectFlagBits::eColor,
-                /* base mipmap level */ 0, /* level count */ 1,
-                /* base array layer */ 0, /* layer count */ 1
-            }
-        });
+            data.image_views[i] = device->createImageViewUnique(vk::ImageViewCreateInfo{
+                {}, data.images[i].get(), vk::ImageViewType::e2D, OUTPUT_FORMAT, {},
+                vk::ImageSubresourceRange{
+                    vk::ImageAspectFlagBits::eColor,
+                    /* base mipmap level */ 0, /* level count */ 1,
+                    /* base array layer */ 0, /* layer count */ 1
+                }
+            });
+
+            views[i] = data.image_views[i].get();
+        }
 
         data.framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-            {}, render_pass.get(), /* attachment count */ 1, &data.image_view.get(),
+            {}, render_pass.get(),
+            /* attachments */ static_cast<uint32_t>(views.size()), views.data(),
             resampling_resolution, resampling_resolution, /* layers */ 1
         });
     }
@@ -176,22 +180,28 @@ void Resampler::build_pipeline()
         /* alpha to one */ false
     };
 
-    vk::PipelineColorBlendAttachmentState color_blend_attachment_state
-        {false,
-         vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-         vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-         vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
-             | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+    vk::PipelineColorBlendAttachmentState color_blend_attachment_state{
+        false,
+        vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+        vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
+            | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+    };
 
-    vk::PipelineColorBlendStateCreateInfo color_blend_state_create_info
-        {{}, false, vk::LogicOp::eCopy, 1, &color_blend_attachment_state, {0, 0, 0, 0}};
+    std::array color_blend_attachment_states{color_blend_attachment_state, color_blend_attachment_state};
+
+    vk::PipelineColorBlendStateCreateInfo color_blend_state_create_info{
+        {}, false, vk::LogicOp::eCopy,
+        static_cast<uint32_t>(color_blend_attachment_states.size()), color_blend_attachment_states.data(),
+        {0, 0, 0, 0}
+    };
 
     vk::DescriptorSetLayoutBinding ubo_layout_binding{
         /* binding */ 0,
-                      vk::DescriptorType::eUniformBuffer,
+        vk::DescriptorType::eUniformBuffer,
         /* descriptor count */ 1,
-                      vk::ShaderStageFlagBits::eVertex,
-                      nullptr
+        vk::ShaderStageFlagBits::eVertex,
+        nullptr
     };
 
     auto descriptor_set_layout = device->createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
@@ -204,19 +214,33 @@ void Resampler::build_pipeline()
         /* push constant ranges */ 0, nullptr
     });
 
-    vk::AttachmentDescription attachment_description
-        {{}, OUTPUT_FORMAT, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
-         vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-         vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR};
+    std::array attachment_descriptions{
+        vk::AttachmentDescription{
+            {}, OUTPUT_FORMAT, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+            vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+        },
+        vk::AttachmentDescription{
+            {}, OUTPUT_FORMAT, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+            vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+        }
+    };
 
-    vk::AttachmentReference attachment_reference
-        {0, vk::ImageLayout::eColorAttachmentOptimal};
-    vk::SubpassDescription subpass_description
-        {{}, vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &attachment_reference};
+    std::array attachment_references{
+        vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal},
+        vk::AttachmentReference{1, vk::ImageLayout::eColorAttachmentOptimal}
+    };
+
+    vk::SubpassDescription subpass_description{
+        {}, vk::PipelineBindPoint::eGraphics,
+        0, nullptr,
+        static_cast<uint32_t>(attachment_references.size()), attachment_references.data()
+    };
 
     render_pass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
         {},
-        1, &attachment_description,
+        static_cast<uint32_t>(attachment_descriptions.size()), attachment_descriptions.data(),
         1, &subpass_description
     });
 
@@ -262,33 +286,43 @@ void Resampler::build_pipeline()
     });
 
     {
-        uniform_buffer = device->createBufferUnique(vk::BufferCreateInfo{
-            {},
-            sizeof(UniformBufferObject),
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::SharingMode::eExclusive
-        });
+        VmaAllocatorCreateInfo info {
+            .flags = {},
+            .physicalDevice = physical_device,
+            .device = device.get(),
 
-        auto memory_requirements = device->getBufferMemoryRequirements(uniform_buffer.get());
-        uniform_buffer_memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
-            memory_requirements.size,
-            VkHelpers::find_memory_type(physical_device, memory_requirements.memoryTypeBits,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-        });
+            .preferredLargeHeapBlockSize = {},
+            .pAllocationCallbacks = {},
+            .pDeviceMemoryCallbacks = {},
+            .frameInUseCount = 1,
+            .pHeapSizeLimit = {},
+            .pVulkanFunctions = {},
+            .pRecordSettings = {},
 
-        device->bindBufferMemory(uniform_buffer.get(), uniform_buffer_memory.get(), 0);
+            .instance = vk_instance.get(),
+            .vulkanApiVersion = VK_API_VERSION_1_2,
+        };
+        vmaCreateAllocator(&info, &allocator);
+
+        deferred_allocator_destroy =
+            decltype(deferred_allocator_destroy)(&allocator,
+                [](void* alloc)
+                {
+                    vmaDestroyAllocator(*reinterpret_cast<VmaAllocator*>(alloc));
+                });
+    }
+
+    {
+        uniform_buffer = UniqueVmaBuffer(allocator, sizeof(UniformBufferObject),
+            vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         UniformBufferObject ubo{
             float(resampling_resolution - 1) / float(resampling_resolution)
         };
 
-        void* mapped_data;
-        if (device->mapMemory(uniform_buffer_memory.get(), 0, memory_requirements.size, {}, &mapped_data) != vk::Result::eSuccess)
-        {
-            throw std::runtime_error("Unable to map buffer memory!");
-        }
-        std::memcpy(mapped_data, &ubo, sizeof(ubo));
-        device->unmapMemory(uniform_buffer_memory.get());
+        auto mapped = uniform_buffer.map();
+        std::memcpy(mapped, &ubo, sizeof(ubo));
+        uniform_buffer.unmap();
     }
 
     {
@@ -334,6 +368,7 @@ struct PatchVertexData
     std::vector<Vertex> vertices;
     std::vector<uint32_t> triangles;
     std::vector<uint32_t> line_strip;
+    uint32_t bottom_right_index{};
 };
 
 PatchVertexData build_vertex_data(const QuadPatch& patch, const std::vector<MappingElement>& mapping)
@@ -350,6 +385,11 @@ PatchVertexData build_vertex_data(const QuadPatch& patch, const std::vector<Mapp
             const auto&[m_x, m_y] = m;
             const auto&[x, y, z] = M;
             result.vertices.push_back({{float(m_x), float(m_y)}, {float(x), float(y), float(z)}});
+
+            if (m_x == 1.f && m_y == 1.f)
+            {
+                result.bottom_right_index = idx;
+            }
 
             indices.emplace(M, idx++);
         }
@@ -369,9 +409,14 @@ PatchVertexData build_vertex_data(const QuadPatch& patch, const std::vector<Mapp
     for (auto& tri : patch.triangles)
     {
         auto verts = triangle_verts(tri);
-        for (auto v : verts)
+        std::array fields{&ThickTriangle::a, &ThickTriangle::b, &ThickTriangle::c};
+        for (std::size_t i = 0; i < verts.size(); ++i)
         {
-            result.triangles.push_back(indices[v]);
+            auto index = indices[verts[i]];
+            result.triangles.push_back(index);
+            const ThickVertex& v = tri.*fields[i];
+            result.vertices[index].normal << float(v.nx), float(v.ny), float(v.nz);
+            result.vertices[index].uv << float(v.u), float(v.v);
         }
     }
 
@@ -379,62 +424,29 @@ PatchVertexData build_vertex_data(const QuadPatch& patch, const std::vector<Mapp
     return result;
 }
 
-struct BufferAndMemory
-{
-    vk::UniqueDeviceMemory memory;
-    vk::UniqueBuffer buffer;
-};
-
 template<class T>
-BufferAndMemory make_buffer(const vk::PhysicalDevice& physical_device, vk::Device* device,
-    const std::vector<T>& data, vk::BufferUsageFlagBits usage)
+UniqueVmaBuffer make_buffer(VmaAllocator allocator, const std::vector<T>& data, vk::BufferUsageFlagBits usage)
 {
-    auto buffer = device->createBufferUnique(vk::BufferCreateInfo{
-        {}, sizeof(data[0]) * data.size(),
-        usage,
-        vk::SharingMode::eExclusive
-    });
+    auto result = UniqueVmaBuffer(allocator, data.size() * sizeof(data[0]), usage, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-    auto memory_requirements = device->getBufferMemoryRequirements(buffer.get());
-    auto memory = device->allocateMemoryUnique(vk::MemoryAllocateInfo{
-        memory_requirements.size,
-        VkHelpers::find_memory_type(physical_device, memory_requirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-    });
+    auto mapped = result.map();
+    std::memcpy(mapped, data.data(), sizeof(data[0]) * data.size());
+    result.unmap();
 
-    device->bindBufferMemory(buffer.get(), memory.get(), 0);
-
-    void* mapped_data;
-    if (device->mapMemory(memory.get(), 0, memory_requirements.size, {}, &mapped_data) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("Unable to map buffer memory!");
-    }
-    std::memcpy(mapped_data, data.data(), sizeof(data[0]) * data.size());
-    device->unmapMemory(memory.get());
-
-    return {std::move(memory), std::move(buffer)};
+    return result;
 }
 
-std::vector<std::array<float, 3>> Resampler::resample(const QuadPatch& patch,
+std::vector<float> Resampler::resample(const QuadPatch& patch,
     const std::vector<MappingElement>& mapping, std::size_t thread_idx)
 {
-    auto[vertices, triangles, line_strip] = build_vertex_data(patch, mapping);
+    auto[vertices, triangles, line_strip, bottom_right_index] = build_vertex_data(patch, mapping);
 
     auto& data = per_thread_datum[thread_idx];
 
-    device->resetFences({data.rendered_fence.get()});
 
-    auto[vertex_memory, vertex_buffer] =
-        make_buffer(physical_device, &device.get(),
-            vertices, vk::BufferUsageFlagBits::eVertexBuffer);
-
-    auto[triangle_memory, triangle_buffer] =
-        make_buffer(physical_device, &device.get(),
-            triangles, vk::BufferUsageFlagBits::eIndexBuffer);
-
-    auto[line_memory, line_buffer] =
-        make_buffer(physical_device, &device.get(),
-            line_strip, vk::BufferUsageFlagBits::eIndexBuffer);
+    auto vertex_buffer = make_buffer(allocator, vertices, vk::BufferUsageFlagBits::eVertexBuffer);
+    auto triangle_buffer = make_buffer(allocator, triangles, vk::BufferUsageFlagBits::eIndexBuffer);
+    auto line_buffer = make_buffer(allocator, line_strip, vk::BufferUsageFlagBits::eIndexBuffer);
 
 
     build_command_buffer(vertex_buffer.get(), triangle_buffer.get(), line_buffer.get(),
@@ -446,50 +458,48 @@ std::vector<std::array<float, 3>> Resampler::resample(const QuadPatch& patch,
         /* signal semaphores */ 0, nullptr
     };
     
-    if (data.queue.submit(1, &submit_info, data.rendered_fence.get()) != vk::Result::eSuccess
-        || device->waitForFences({data.rendered_fence.get()}, true, 1'000'000'000) != vk::Result::eSuccess)
+    if (data.queue.submit(1, &submit_info, nullptr) != vk::Result::eSuccess)
     {
         throw std::runtime_error("Resampling didnt succeed!");
     }
 
-    auto layout = device->getImageSubresourceLayout(data.image.get(),
-        vk::ImageSubresource{vk::ImageAspectFlagBits::eColor});
+    data.queue.waitIdle();
 
-    const char* current_byte;
-    if (device->mapMemory(data.image_memory.get(), 0, layout.size, {},
-        reinterpret_cast<void**>(const_cast<char**>(&current_byte))) != vk::Result::eSuccess)
+    std::vector<float> result;
+
     {
-        throw std::runtime_error("Unable to map output buffer result!");
-    }
+        result.resize(resampling_resolution*resampling_resolution*8);
 
-    current_byte += layout.offset;
-
-    std::vector<std::array<float, 3>> result;
-    result.reserve(resampling_resolution*resampling_resolution);
-
-    for (std::size_t y = 0; y < resampling_resolution; ++y)
-    {
-        const char* current =  current_byte;
-        for (std::size_t x = 0; x < resampling_resolution; ++x)
+        auto current0 = reinterpret_cast<const float*>(data.image_staging[0].map());
+        auto current1 = reinterpret_cast<const float*>(data.image_staging[1].map());
+        for (std::size_t i = 0; i < resampling_resolution*resampling_resolution; ++i)
         {
-            result.push_back(*reinterpret_cast<const std::array<float, 3>*>(current));
-            // skip alpha
-            current += 4*sizeof(float);
+            std::memcpy(result.data() + 8*i,     current0, 4*sizeof(float));
+            std::memcpy(result.data() + 8*i + 4, current1, 4*sizeof(float));
+            current0 += 4;
+            current1 += 4;
         }
-        current_byte += layout.rowPitch;
+        data.image_staging[0].unmap();
+        data.image_staging[1].unmap();
+
+        // THIS IS A KOSTYL
+        // TODO: Think about this
+        // bottom right corner does not get rendered due to rasterization rules
+        // this can be fixed with a teeeeny-tiny upscaling, but this might result in
+        // seams due to interpolation :(
+
+        result[result.size() - 8] = vertices[bottom_right_index].position.x();
+        result[result.size() - 7] = vertices[bottom_right_index].position.y();
+        result[result.size() - 6] = vertices[bottom_right_index].position.z();
+
+        result[result.size() - 5] = vertices[bottom_right_index].uv.x();
+        result[result.size() - 4] = vertices[bottom_right_index].uv.y();
+
+        result[result.size() - 3] = vertices[bottom_right_index].normal.x();
+        result[result.size() - 2] = vertices[bottom_right_index].normal.y();
+        result[result.size() - 1] = vertices[bottom_right_index].normal.z();
+
     }
-
-    // THIS IS A KOSTYL
-    // TODO: Think about this
-    // bottom right corner does not get rendered due to rasterization rules
-    // this can be fixed with a teeeeny-tiny upscaling, but this might result in
-    // seams due to interpolation :(
-
-    result.back()[0] = static_cast<float>(get<0>(patch.boundary[1].back()));
-    result.back()[1] = static_cast<float>(get<1>(patch.boundary[1].back()));
-    result.back()[2] = static_cast<float>(get<2>(patch.boundary[1].back()));
-
-    device->unmapMemory(data.image_memory.get());
 
     return result;
 }
@@ -497,8 +507,6 @@ std::vector<std::array<float, 3>> Resampler::resample(const QuadPatch& patch,
 void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triangle_buffer, vk::Buffer line_buffer,
     uint32_t triangle_indices_count, uint32_t line_indices_count, std::size_t thread_idx)
 {
-    vk::ClearValue clear_value{std::array{0.f, 0.f, 0.f, 0.f}};
-
     auto& data = per_thread_datum[thread_idx];
     auto& cb = data.command_buffer;
 
@@ -507,10 +515,34 @@ void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triang
 
     cb->begin(vk::CommandBufferBeginInfo{});
 
+    for (auto& image : data.images)
+    {
+        vk::ImageMemoryBarrier barrier{
+            {}, vk::AccessFlagBits::eColorAttachmentWrite,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            image.get(),
+            vk::ImageSubresourceRange{
+                vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
+            }
+        };
+        cb->pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            {}, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
+
+    std::array clear_values{
+        vk::ClearValue{std::array{0.f, 0.f, 0.f, 0.f}},
+        vk::ClearValue{std::array{0.f, 0.f, 0.f, 0.f}},
+        vk::ClearValue{std::array{0.f, 0.f, 0.f, 0.f}}
+    };
+
+
     cb->beginRenderPass(vk::RenderPassBeginInfo{
         render_pass.get(), data.framebuffer.get(),
         vk::Rect2D{{0, 0}, {resampling_resolution, resampling_resolution}},
-        1, &clear_value
+        static_cast<uint32_t>(clear_values.size()), clear_values.data()
     }, vk::SubpassContents::eInline);
 
     {
@@ -536,6 +568,37 @@ void Resampler::build_command_buffer(vk::Buffer vertex_buffer, vk::Buffer triang
     }
 
     cb->endRenderPass();
+
+
+    for (auto& image : data.images)
+    {
+        vk::ImageMemoryBarrier barrier{
+            vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eTransferRead,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            image.get(),
+            vk::ImageSubresourceRange{
+                vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
+            }
+        };
+        cb->pipelineBarrier(
+            vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eTransfer,
+            {}, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
+
+    for (std::size_t i = 0; i < data.images.size(); ++i)
+    {
+        vk::BufferImageCopy region{
+            0, resampling_resolution, resampling_resolution,
+            vk::ImageSubresourceLayers{
+                vk::ImageAspectFlagBits::eColor, 0, 0, 1
+            },
+            vk::Offset3D{0, 0, 0}, vk::Extent3D{resampling_resolution, resampling_resolution, 1}
+        };
+        cb->copyImageToBuffer(data.images[i].get(), vk::ImageLayout::eTransferSrcOptimal, data.image_staging[i].get(),
+            1, &region);
+    }
 
     cb->end();
 }

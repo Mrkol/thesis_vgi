@@ -27,6 +27,7 @@ public:
         std::size_t per_frame_update_limit;
 
         vk::Format format;
+        std::size_t format_multiplicity;
 
         // Minimum mipmap level. Also determines the cache page side size as 2^min_mip
         std::size_t min_mip;
@@ -60,6 +61,8 @@ public:
     RingBuffer& get_indirection_table_sbo() { return indirection_tables_sbo; }
 
     [[nodiscard]] std::size_t get_mip_level_count() const { return image_mip_data[0].size(); }
+    [[nodiscard]] std::size_t cache_size_pixels() const
+        { return cache_side_size * cache_side_size * page_side_size * page_side_size; }
 
 private:
     void bump_page_impl(PageInfo info, std::size_t gen);
@@ -76,6 +79,7 @@ private:
     std::size_t pixel_size{0};
     std::size_t page_side_size{0};
     std::size_t per_frame_update_limit{0};
+    std::size_t format_multiplicity{0};
 
     std::vector<std::vector<const std::byte*>> image_mip_data;
 
