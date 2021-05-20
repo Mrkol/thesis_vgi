@@ -6,7 +6,6 @@
 #include <fstream>
 #include <Eigen/Dense>
 
-#include "../DataTypes.hpp"
 #include "VkHelpers.hpp"
 
 

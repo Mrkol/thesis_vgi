@@ -17,6 +17,9 @@ public:
     virtual vk::UniqueDescriptorSet create_descriptor_set(vk::DescriptorSetLayout layout) = 0;
     virtual UniqueVmaBuffer create_vbo(std::size_t size) = 0;
 
+    virtual UniqueVmaImage create_texture(vk::Extent2D extent, std::size_t layers) = 0;
+    virtual UniqueVmaBuffer create_staging_buffer(std::size_t size) = 0;
+
     virtual VirtualTextureSet
     create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_update_limit, vk::Format format,
         std::size_t format_multiplicity, std::size_t min_mip,

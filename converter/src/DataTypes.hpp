@@ -39,7 +39,7 @@ struct ThickVertex
 {
     FloatingNumber x {}, y {}, z {};
     FloatingNumber nx{}, ny{}, nz{};
-    FloatingNumber u {}, v {}, w {};
+    FloatingNumber u {}, v {};
 };
 
 using Vector4 = Eigen::Matrix<FloatingNumber, 4, 1>;
@@ -55,7 +55,7 @@ inline ThickVertex midpoint(const ThickVertex& a, const ThickVertex& b)
     {
         std::midpoint(a.x, b.x), std::midpoint(a.y, b.y), std::midpoint(a.z, b.z),
         std::midpoint(a.nx, b.nx), std::midpoint(a.ny, b.ny), std::midpoint(a.nz, b.nz),
-        std::midpoint(a.u, b.u), std::midpoint(a.v, b.v), std::midpoint(a.w, b.w),
+        std::midpoint(a.u, b.u), std::midpoint(a.v, b.v)
     };
 }
 
@@ -81,7 +81,7 @@ struct ThickTriangle
 	ThickVertex c;
 };
 
-static_assert(sizeof(ThickTriangle) == sizeof(FloatingNumber)*9*3);
+static_assert(sizeof(ThickTriangle) == sizeof(FloatingNumber)*8*3);
 
 inline std::array<HashableCoords, 3> triangle_verts(const ThickTriangle& tri)
 {
@@ -117,10 +117,10 @@ inline void write_plainfile(const std::filesystem::path& path, const std::vector
 inline std::vector<ThickTriangle> read_plainfile(const std::filesystem::path& path)
 {
     std::vector<ThickTriangle> triangles;
-    triangles.resize(file_size(path) / sizeof(ThickTriangle));
+    triangles.resize(file_size(path) / sizeof(triangles[0]));
 
     std::ifstream in{path, std::ios_base::binary};
-    in.read(reinterpret_cast<char*>(triangles.data()), file_size(path));
+    in.read(reinterpret_cast<char*>(triangles.data()), triangles.size() * sizeof(triangles[0]));
 
     return triangles;
 }

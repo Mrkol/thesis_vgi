@@ -47,7 +47,7 @@ VirtualTextureSet::VirtualTextureSet(VirtualTextureSet::CreateInfo info)
     cache_state.resize(cache_lifetimes.size());
 
 
-    transfer_layout(info.single_time_cb,
+    cache.transfer_layout(info.single_time_cb,
         vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal,
         {}, vk::AccessFlagBits::eTransferWrite,
         vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
@@ -188,7 +188,7 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
 {
     if (!staging_targets.empty())
     {
-        transfer_layout(cb,
+        cache.transfer_layout(cb,
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal,
             {}, vk::AccessFlagBits::eTransferWrite,
             vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
@@ -197,7 +197,7 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
         cb.copyBufferToImage(staging_buffer.get(), cache.get(), vk::ImageLayout::eTransferDstOptimal,
             static_cast<uint32_t>(staging_targets.size()), staging_targets.data());
 
-        transfer_layout(cb,
+        cache.transfer_layout(cb,
             vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
             vk::PipelineStageFlagBits::eTransfer,
@@ -208,26 +208,6 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
         ++generation;
         staging_targets.clear();
     }
-}
-
-void VirtualTextureSet::transfer_layout(vk::CommandBuffer cb,
-    vk::ImageLayout src, vk::ImageLayout dst,
-    vk::AccessFlags srcAccess, vk::AccessFlags dstAccess,
-    vk::PipelineStageFlags srcStages, vk::PipelineStageFlags dstStages)
-{
-    vk::ImageMemoryBarrier barrier{
-        srcAccess, dstAccess,
-        src, dst,
-        VK_QUEUE_FAMILY_IGNORED,
-        VK_QUEUE_FAMILY_IGNORED,
-        cache.get(),
-        vk::ImageSubresourceRange{
-            vk::ImageAspectFlagBits::eColor, 0, 1, 0, static_cast<uint32_t>(format_multiplicity),
-        }
-    };
-    cb.pipelineBarrier(
-        srcStages, dstStages,
-        {}, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 std::size_t calc_indirection_tables_size(std::size_t count)

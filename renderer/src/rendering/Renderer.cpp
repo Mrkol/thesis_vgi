@@ -561,6 +561,17 @@ UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
     return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
+UniqueVmaImage Renderer::create_texture(vk::Extent2D extent, std::size_t layers)
+{
+    return UniqueVmaImage(allocator, vk::Format::eR8G8B8A8Srgb, extent, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, VMA_MEMORY_USAGE_GPU_ONLY, layers);
+}
+
+UniqueVmaBuffer Renderer::create_staging_buffer(std::size_t size)
+{
+    return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
 VirtualTextureSet
 Renderer::create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_update_limit, vk::Format format,
     std::size_t format_multiplicity, std::size_t min_mip, std::vector<std::vector<const std::byte*>> image_mip_data)

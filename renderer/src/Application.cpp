@@ -106,7 +106,7 @@ int Application::run()
 void Application::tick(float delta_seconds)
 {
     auto* cam = renderer->debug_get_scene()->debug_get_camera();
-    cam->move(cam_velocity.cast<float>(), 1.4f * delta_seconds);
+    cam->move(cam_velocity.cast<float>(), 1.4f * delta_seconds * cam_speed);
 
     {
         auto c = poll_cursor();
@@ -153,6 +153,7 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
     {
         return;
     }
+
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
@@ -171,6 +172,17 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
     app->cam_velocity.y() += coeff*(key == GLFW_KEY_W)     - coeff*(key == GLFW_KEY_S);
     app->cam_velocity.x() += coeff*(key == GLFW_KEY_A)     - coeff*(key == GLFW_KEY_D);
     app->cam_velocity.z() += coeff*(key == GLFW_KEY_SPACE) - coeff*(key == GLFW_KEY_LEFT_SHIFT);
+    if (key == GLFW_KEY_LEFT_CONTROL)
+    {
+        if (action == GLFW_PRESS)
+        {
+            app->cam_speed = 2;
+        }
+        else
+        {
+            app->cam_speed = 1;
+        }
+    }
 }
 
 Eigen::Vector2f Application::poll_cursor()

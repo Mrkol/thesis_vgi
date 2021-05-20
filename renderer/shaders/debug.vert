@@ -5,9 +5,17 @@ layout(location = 0) in vec3 inPosition;
 
 layout(location = 0) out vec3 color;
 
+struct DirectionalLight
+{
+    vec4 direction;
+    vec4 diffuse;
+    vec4 specular;
+};
+
 layout(set = 0, binding = 0) uniform GlobalUBO {
     mat4 view;
     mat4 proj;
+    DirectionalLight sun;
 } global_ubo;
 
 layout(set = 1, binding = 0) uniform ObjectUBO {

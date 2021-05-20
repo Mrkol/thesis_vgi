@@ -13,19 +13,29 @@ layout(location = 3) in uint instance_index[];
 
 // OUTPUTS
 
-layout(location = 0) out vec3 color;
-layout(location = 1) flat out uint out_mip;
+layout(location = 0) out vec3 out_position;
+layout(location = 1) out vec3 out_normal;
+layout(location = 2) out vec2 out_uv;
 
 
 // UNIFORMS
 
+struct DirectionalLight
+{
+    vec4 direction;
+    vec4 diffuse;
+    vec4 specular;
+};
+
 layout(set = 0, binding = 0) uniform GlobalUBO {
     mat4 view;
     mat4 proj;
+    DirectionalLight sun;
 } global_ubo;
 
 layout(set = 1, binding = 0) uniform ObjectUBO {
     mat4 model;
+    mat4 normal;
     uint cache_side_size;
     uint min_mip;
     uint mip_level_count;
@@ -78,7 +88,7 @@ Pixel get_from_cache(uint page, vec2 in_page_uv)
 
     vec4 a = texture(geometry_image, vec3(uv, 0));
     vec4 b = texture(geometry_image, vec3(uv, 1));
-    return Pixel(a.xyz, vec2(a.w, b.x), b.yzw);
+    return Pixel(a.xyz, vec2(a.w, 1 - b.x), b.yzw);
 }
 
 Pixel read_virtual_texture(uint idx, uint mip, vec2 uv, uvec2 page_offset)
@@ -118,10 +128,6 @@ Pixel read_virtual_texture(uint idx, uint mip, vec2 uv, uvec2 page_offset)
 
 void main()
 {
-    color = vec3(gl_TessCoord.xy, 1);
-    out_mip = uint(instance_mip[0]);
-
-
     Pixel p = read_virtual_texture(
         instance_index[0],
         uint(clamp(log2(instance_mip[0] / instance_param_space_size[0]),
@@ -130,5 +136,10 @@ void main()
         uvec2(gl_TessCoord.xy)
     );
 
-    gl_Position = global_ubo.proj * global_ubo.view * object_ubo.model * vec4(p.position, 1.0);
+    vec4 screenspace_position = global_ubo.view * object_ubo.model * vec4(p.position, 1.0);
+
+    out_position = screenspace_position.xyz / screenspace_position.w;
+    out_normal = mat3(object_ubo.normal) * p.normal;
+    out_uv = p.uv;
+    gl_Position = global_ubo.proj * screenspace_position;
 }

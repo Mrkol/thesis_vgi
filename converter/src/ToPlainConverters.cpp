@@ -93,12 +93,12 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
             };
 
         auto LookupVertData =
-            [&LookupInFile, &vert_file, &norm_file, &uv_file](size_t vert_idx, size_t norm_idx, size_t uv_idx)
+            [&LookupInFile, &vert_file, &norm_file, &uv_file](size_t vert_idx, size_t uv_idx, size_t norm_idx)
             {
                 auto[x, y, z] = LookupInFile(vert_file, vert_idx - 1);
                 auto[nx, ny, nz] = LookupInFile(norm_file, norm_idx - 1);
                 auto[u, v, w] = LookupInFile(uv_file, uv_idx - 1);
-                return ThickVertex{x, y, z, nx, ny, nz, u, v, w};
+                return ThickVertex{x, y, z, nx, ny, nz, u, v};
             };
 
         std::ofstream out{output_file, std::ios_base::binary};
@@ -139,7 +139,7 @@ void obj_to_plain(const std::filesystem::path& obj_file, const std::filesystem::
 
             ThickTriangle all_verts{v1, v2, v3};
 
-            out.write(reinterpret_cast<char*>(&all_verts), sizeof(FloatingNumber)*9*3);
+            out.write(reinterpret_cast<char*>(&all_verts), sizeof(all_verts));
         }
     }
 }

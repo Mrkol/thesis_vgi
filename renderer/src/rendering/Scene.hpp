@@ -28,6 +28,14 @@ enum class ViewMode : uint32_t
     SIZE
 };
 
+// vec4 as vulkan seems to hate vec3
+struct DirectionalLight
+{
+    Eigen::Vector4f direction;
+    Eigen::Vector4f diffuse;
+    Eigen::Vector4f specular;
+};
+
 class Scene
 {
 public:
@@ -69,4 +77,6 @@ private:
     std::vector<std::unique_ptr<SceneObjectBase>> scene_objects;
 
     Camera camera;
+
+    DirectionalLight sun{};
 };

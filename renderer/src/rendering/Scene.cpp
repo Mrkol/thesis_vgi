@@ -1,5 +1,7 @@
 #include "Scene.hpp"
 
+#include <imgui.h>
+
 #include "SceneObjectBase.hpp"
 #include "scene_objects/Grid.hpp"
 #include "scene_objects/VMesh.hpp"
@@ -11,9 +13,9 @@ struct GlobalUBO
 {
     Eigen::Matrix4f view;
     Eigen::Matrix4f proj;
+    DirectionalLight sun;
 };
 
-static_assert(sizeof(GlobalUBO) == sizeof(float) * (4 * 4) * 2);
 
 Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
     : resource_manager{irm}
@@ -24,7 +26,9 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         /* binding */ 0,
         vk::DescriptorType::eUniformBuffer,
         /* descriptor count */ 1,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eTessellationEvaluation,
+        vk::ShaderStageFlagBits::eVertex
+            | vk::ShaderStageFlagBits::eTessellationEvaluation
+            | vk::ShaderStageFlagBits::eFragment,
         nullptr
     };
 
@@ -35,11 +39,40 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
     global_uniforms = irm->create_descriptor_set_ring(global_descriptor_set_layout.get());
     global_uniforms.write_ubo(global_uniform_buffer, 0);
 
-    add_object(std::make_unique<GridSceneObject>(10));
-    auto vmesh = std::make_unique<VMesh>("../converter/resampled");
-    vmesh->scale.setConstant(0.01f);
-    vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-    add_object(std::move(vmesh));
+    {
+        auto grid = std::make_unique<GridSceneObject>(16);
+        grid->scale.setConstant(16);
+        add_object(std::move(grid));
+    }
+
+    {
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << 0, 0, -5;
+        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(vmesh));
+    }
+
+    {
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << 0, 0, -5;
+        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
+            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(vmesh));
+    }
+
+    {
+        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << 5, 0, 0;
+        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(vmesh));
+    }
+
+    sun.direction << -1, 0, 1, 0;
+    sun.diffuse << 1, 1, 1, 0;
+    sun.specular << 1, 1, 1, 0;
 }
 
 void Scene::recreate_pipelines(PipelineCreationInfo info)
@@ -68,7 +101,8 @@ void Scene::tick(float delta_seconds)
         perspective(static_cast<float>(EIGEN_PI/2),
             static_cast<float>(pipeline_creation_info.extent.width)
                 /static_cast<float>(pipeline_creation_info.extent.height),
-            .01f, 10.f)
+            .01f, 10.f),
+        sun
     };
     global_uniform_buffer.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
 

@@ -1,9 +1,12 @@
 #include "VMesh.hpp"
 
-#include <map>
-#include <VkHelpers.hpp>
+#include <stb_image.h>
 #include <imgui.h>
+#include <map>
+
+#include <VkHelpers.hpp>
 #include <Utility.hpp>
+
 
 
 static constexpr std::size_t CACHE_SIZE = 128;
@@ -19,18 +22,24 @@ struct __attribute__((packed)) PerInstanceData
 
 static_assert(sizeof(PerInstanceData) == 8*sizeof(float) + sizeof(uint32_t));
 
-struct UBO
+struct __attribute__((packed)) UBO
 {
     Eigen::Matrix4f model;
+    Eigen::Matrix4f normal;
     uint32_t cache_side_pages;
     uint32_t min_mip;
     uint32_t mip_level_count;
 };
 
 VMesh::VMesh(const std::filesystem::path& folder)
-    : atlas(folder)
+    : texture_maps{UniqueStbImage{folder / "albedo.jpg"}, UniqueStbImage{folder / "roughness.jpg"}}
+    , atlas(folder / "resampled")
     , current_cut(atlas.default_cut())
 {
+    for (auto& map : texture_maps)
+    {
+        AD_HOC_ASSERT(map.width() == texture_maps[0].width() && map.height() == texture_maps[0].height(), "Oops");
+    }
 }
 
 const SceneObjectTypeFactory& VMesh::get_scene_object_type_factory() const
@@ -79,15 +88,110 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     }));
 
     descriptors.write_sbo(vgis.get_indirection_table_sbo(), 2);
+
+
+
+
+
+    textures = irm->create_texture(
+        {static_cast<uint32_t>(texture_maps[0].width()), static_cast<uint32_t>(texture_maps[0].height())},
+        texture_maps.size());
+
+
+    auto cb = irm->begin_single_time_commands();
+
+    textures.transfer_layout(cb.get(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        {}, vk::AccessFlagBits::eTransferWrite,
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
+
+
+    std::size_t staging_size = TEXTURE_MAP_COUNT * texture_maps[0].width() * texture_maps[0].height() * 4;
+    auto staging = irm->create_staging_buffer(staging_size);
+
+    auto mapped = staging.map();
+
+    // TODO: make not fubar
+    for (auto& map : texture_maps)
+    {
+        std::size_t size = map.width() * map.height() * 4;
+        std::memcpy(mapped, map.data(), size);
+        mapped += size;
+    }
+
+    staging.unmap();
+
+    std::array<vk::BufferImageCopy, TEXTURE_MAP_COUNT> copy_ops;
+    std::size_t curr_offset = 0;
+    for (std::size_t i = 0; i < TEXTURE_MAP_COUNT; ++i)
+    {
+        copy_ops[i] =vk::BufferImageCopy{
+            static_cast<uint32_t>(curr_offset),
+            static_cast<uint32_t>(texture_maps[i].width()), static_cast<uint32_t>(texture_maps[i].height()),
+            vk::ImageSubresourceLayers{
+                vk::ImageAspectFlagBits::eColor,
+                0, static_cast<uint32_t>(i), 1
+            },
+            vk::Offset3D{0, 0, 0},
+            vk::Extent3D{
+                static_cast<uint32_t>(texture_maps[i].width()),
+                static_cast<uint32_t>(texture_maps[i].height()),
+                1
+            }
+        };
+        curr_offset += texture_maps[i].width() * texture_maps[i].height() * 4;
+    }
+
+    cb->copyBufferToImage(staging.get(), textures.get(), vk::ImageLayout::eTransferDstOptimal, copy_ops);
+
+    textures.transfer_layout(cb.get(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader);
+
+    irm->finish_single_time_commands(std::move(cb));
+
+    sampler = irm->get_device().createSamplerUnique(vk::SamplerCreateInfo{
+        {}, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        0, false, 1, false, vk::CompareOp::eAlways, 0, 0, vk::BorderColor::eIntOpaqueBlack, false
+    });
+
+    textures_view = irm->get_device().createImageViewUnique(vk::ImageViewCreateInfo{
+        {}, textures.get(), vk::ImageViewType::e2DArray, vk::Format::eR8G8B8A8Srgb,
+        vk::ComponentMapping{},
+        vk::ImageSubresourceRange{
+            vk::ImageAspectFlagBits::eColor,
+            0, 1, 0, TEXTURE_MAP_COUNT
+        }
+    });
+
+    vk::DescriptorImageInfo info{
+        sampler.get(), textures_view.get(), vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    descriptors.write_all(std::vector(descriptors.size(),
+        vk::WriteDescriptorSet{
+            {}, 3, 0,
+            1, vk::DescriptorType::eCombinedImageSampler, &info, nullptr, nullptr
+        }
+    ));
 }
 
 void VMesh::tick(float delta_seconds, TickInfo tick_info)
 {
-    UBO raw_ubo{
+    Eigen::Matrix4f model_mat =
         ( rotation
-            * Eigen::Translation3f(position)
-            * Eigen::AlignedScaling3f(scale)
-        ).matrix(),
+        * Eigen::Translation3f(position)
+        * Eigen::AlignedScaling3f(scale)
+        ).matrix();
+
+    // DON'T TOUCH THIS, EIGEN WILL CRASH
+    Eigen::Matrix4f normal_mat = (tick_info.view * model_mat).inverse().transpose();
+
+    UBO raw_ubo{
+        model_mat,
+        normal_mat,
         CACHE_SIZE,
         static_cast<uint32_t>(atlas.get_min_mip()),
         static_cast<uint32_t>(vgis.get_mip_level_count()),
@@ -399,6 +503,13 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
             vk::DescriptorType::eStorageBuffer,
             /* descriptor count */ 1,
             vk::ShaderStageFlagBits::eTessellationEvaluation,
+            nullptr
+        },
+        vk::DescriptorSetLayoutBinding{
+            /* binding */ 3,
+            vk::DescriptorType::eCombinedImageSampler,
+            /* descriptor count */ 1,
+            vk::ShaderStageFlagBits::eFragment,
             nullptr
         },
     };

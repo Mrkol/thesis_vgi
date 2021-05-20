@@ -7,6 +7,7 @@
 #include "../data_primitives/VirtualTextureSet.hpp"
 #include "../data_primitives/RingBuffer.hpp"
 #include "../data_primitives/DescriptorSetRing.hpp"
+#include "../../UniqueStbImage.hpp"
 
 
 class VMesh : public TangibleSceneObject
@@ -25,6 +26,10 @@ public:
     [[nodiscard]] const SceneObjectTypeFactory& get_scene_object_type_factory() const override;
 
 private:
+    static constexpr std::size_t TEXTURE_MAP_COUNT = 2;
+    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps;
+
+    // TODO: Move the atlas to the type object
     HierarchicalAtlas atlas;
     HierarchyCut current_cut;
     class VMeshSceneObjectType* our_type{nullptr};
@@ -32,6 +37,9 @@ private:
     UniqueVmaBuffer vbo;
     RingBuffer ubo;
     VirtualTextureSet vgis;
+    UniqueVmaImage textures;
+    vk::UniqueImageView textures_view;
+    vk::UniqueSampler sampler;
 
     DescriptorSetRing descriptors;
 };

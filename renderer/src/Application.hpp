@@ -61,6 +61,7 @@ private:
     std::unique_ptr<Renderer> renderer;
 
     Eigen::Vector3i cam_velocity{0, 0, 0};
+    float cam_speed = 1;
     Eigen::Vector2f prev_mouse_pos{0, 0};
     bool move_camera{false};
 

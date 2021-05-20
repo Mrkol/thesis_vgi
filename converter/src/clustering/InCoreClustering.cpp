@@ -1,10 +1,8 @@
 #include "InCoreClustering.hpp"
 
-#include <fstream>
 #include <queue>
 #include <compare>
 #include <numeric>
-#include <iostream>
 
 #include "../DualSurfaceGraph.hpp"
 

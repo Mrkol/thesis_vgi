@@ -69,11 +69,6 @@ private:
 
     [[nodiscard]] std::size_t page_size() const { return pixel_size * page_side_size * page_side_size; }
 
-    void transfer_layout(vk::CommandBuffer cb,
-        vk::ImageLayout src, vk::ImageLayout dst,
-        vk::AccessFlags srcAccess, vk::AccessFlags dstAccess,
-        vk::PipelineStageFlags srcStages, vk::PipelineStageFlags dstStages);
-
 private:
     std::size_t min_mip{0};
     std::size_t pixel_size{0};
