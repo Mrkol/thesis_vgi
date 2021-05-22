@@ -27,9 +27,9 @@ void gridify(const std::filesystem::path& input_file, const std::filesystem::pat
 	Dimensions dims;
 	in.read(reinterpret_cast<char*>(&dims), sizeof(dims));
 
-	// Dumb heuristics. 1MB is the limit for 1 in-core merge for now
+	// Dumb heuristics. 2MB is the limit for 1 in-core merge for now
 	// TODO: improve
-	auto part_count = std::ceil(std::cbrt(std::max<std::size_t>(size / (1024 * 1024), 1)));
+	auto part_count = std::ceil(std::cbrt(std::max<std::size_t>(size / (2 * 1024 * 1024), 1)));
 	auto grid_size = MeanDimension(dims) / part_count;
 
 	using IntegerNumber = int64_t;

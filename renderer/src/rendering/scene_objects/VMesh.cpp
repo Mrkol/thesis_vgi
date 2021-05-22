@@ -32,7 +32,7 @@ struct __attribute__((packed)) UBO
 };
 
 VMesh::VMesh(const std::filesystem::path& folder)
-    : texture_maps{UniqueStbImage{folder / "albedo.jpg"}, UniqueStbImage{folder / "roughness.jpg"}}
+    : texture_maps{UniqueStbImage{folder / "albedo.jpg"}, UniqueStbImage{folder / "specular.jpg"}}
     , atlas(folder / "resampled")
     , current_cut(atlas.default_cut())
 {

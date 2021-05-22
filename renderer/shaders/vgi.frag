@@ -38,7 +38,7 @@ mat3 calculate_tspace()
 void main()
 {
     vec3 albedo = texture(maps, vec3(uv, 0)).rgb;
-    float roughness = texture(maps, vec3(uv, 1)).r;
+    float specular = texture(maps, vec3(uv, 1)).r;
 
     vec3 actual_normal = normalize(normal);
     vec3 sun_direction = normalize(mat3(global_ubo.view) * -global_ubo.sun.direction.xyz);
@@ -54,7 +54,7 @@ void main()
         // Diffues
         + albedo * global_ubo.sun.diffuse.rgb * L
         // specular
-        + 0.01 / roughness * global_ubo.sun.specular.rgb * pow(S, 3);
+        + 0.01 * specular * global_ubo.sun.specular.rgb * pow(S, 3);
 
     frag_color = vec4(color, 1);
 }

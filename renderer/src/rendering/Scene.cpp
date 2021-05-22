@@ -45,25 +45,25 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         add_object(std::move(grid));
     }
 
-    {
-        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
-        vmesh->scale.setConstant(0.01f);
-        vmesh->position << 0, 0, -5;
-        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(vmesh));
-    }
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+//        vmesh->scale.setConstant(0.01f);
+//        vmesh->position << 0, 0, -5;
+//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(vmesh));
+//    }
+//
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+//        vmesh->scale.setConstant(0.01f);
+//        vmesh->position << 0, 0, -5;
+//        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
+//            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(vmesh));
+//    }
 
     {
-        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
-        vmesh->scale.setConstant(0.01f);
-        vmesh->position << 0, 0, -5;
-        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
-            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(vmesh));
-    }
-
-    {
-        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow");
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
         vmesh->scale.setConstant(0.01f);
         vmesh->position << 5, 0, 0;
         vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
