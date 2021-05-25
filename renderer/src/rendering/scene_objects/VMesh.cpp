@@ -54,9 +54,8 @@ void VMesh::on_type_object_available(SceneObjectType& type)
 
     auto irm = type.get_resource_manager();
 
-    vbo = irm->create_vbo(sizeof(PerInstanceData)
+    vbo = irm->create_dynamic_vbo(sizeof(PerInstanceData)
         * (1 << atlas.get_hierarchy_depth()) * atlas.get_patch_count());
-    vbo.map();
 
     ubo = irm->create_ubo(sizeof(UBO));
     descriptors = irm->create_descriptor_set_ring(type.get_instance_descriptor_set_layout());
@@ -318,7 +317,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
     }
 
     {
-        auto pidata = reinterpret_cast<PerInstanceData*>(vbo.data());
+        auto pidata = reinterpret_cast<PerInstanceData*>(vbo.get_current().data());
 
         auto mip_transform = [](std::size_t mip) { return static_cast<float>(1 << mip); };
 
@@ -350,9 +349,10 @@ void VMesh::record_pre_commands(vk::CommandBuffer cb)
 
 void VMesh::record_commands(vk::CommandBuffer cb)
 {
-    std::array offsets{vk::DeviceSize{0}};
+    vk::DeviceSize offset{vbo.current_offset()};
     auto buf = vbo.get();
-    cb.bindVertexBuffers(0, 1, &buf, offsets.data());
+    cb.bindVertexBuffers(0, 1, &buf, &offset);
+    vbo.next();
 
     std::array sets{descriptors.read_next()};
     cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type->get_pipeline_layout(), 1,

@@ -91,7 +91,7 @@ void VirtualTextureSet::bump_page(VirtualTextureSet::PageInfo info)
 
 void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::size_t gen)
 {
-    if (indirection_tables(info.image_index, info.image_mip - min_mip, info.x, info.y) != IndirectionTables::EMPTY)
+    if (access_indirection_table(info) != IndirectionTables::EMPTY)
     {
         return;
     }
@@ -196,8 +196,8 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
     {
         cache.transfer_layout(cb,
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal,
-            vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eTransferWrite,
-            vk::PipelineStageFlagBits::eTessellationEvaluationShader, vk::PipelineStageFlagBits::eTransfer);
+            {}, vk::AccessFlagBits::eTransferWrite,
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
 
         cb.copyBufferToImage(staging_buffer.get(), cache.get(), vk::ImageLayout::eTransferDstOptimal,
             static_cast<uint32_t>(staging_targets.size()), staging_targets.data());

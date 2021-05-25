@@ -7,12 +7,12 @@
 
 
 #ifdef NDEBUG
-constexpr std::array<const char*, 0> VALIDATION_LAYERS {};
+constexpr std::array VALIDATION_LAYERS {"VK_LAYER_KHRONOS_validation"};
 #else
 constexpr std::array VALIDATION_LAYERS {"VK_LAYER_KHRONOS_validation"};
 #endif
 
-constexpr std::array EXTENSIONS {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+constexpr std::array EXTENSIONS {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_EXT_debug_utils"};
 
 constexpr const char* APP_NAME = "VGI renderer";
 

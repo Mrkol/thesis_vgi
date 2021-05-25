@@ -12,7 +12,7 @@ RingBuffer::RingBuffer(const CreateInfo& info)
     : ring_size{info.ring_size}
     , element_size{info.element_size}
     , element_size_with_padding{align(info.element_size, MINIMAL_ALIGNMENT)}
-    , buffer(info.allocator, info.ring_size * element_size_with_padding, info.buffer_usage, info.memory_usage)
+    , buffer(info.allocator, ring_size * element_size_with_padding, info.buffer_usage, info.memory_usage)
 {
     buffer.map();
 }

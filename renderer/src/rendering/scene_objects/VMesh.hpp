@@ -34,7 +34,7 @@ private:
     HierarchyCut current_cut;
     class VMeshSceneObjectType* our_type{nullptr};
 
-    UniqueVmaBuffer vbo;
+    RingBuffer vbo;
     RingBuffer ubo;
     VirtualTextureSet vgis;
     UniqueVmaImage textures;

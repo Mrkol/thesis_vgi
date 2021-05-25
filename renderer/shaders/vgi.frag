@@ -37,7 +37,7 @@ mat3 calculate_tspace()
 
 void main()
 {
-    vec3 albedo = texture(maps, vec3(uv, 0)).rgb;
+    vec3 albedo = pow(texture(maps, vec3(uv, 0)).rgb, vec3(2.2));
     float specular = texture(maps, vec3(uv, 1)).r;
 
     vec3 actual_normal = normalize(normal);
@@ -50,11 +50,12 @@ void main()
 
     vec3 color =
         // Ambient
-        albedo * vec3(0.05, 0.05, 0.05)
+        albedo * vec3(0.01, 0.01, 0.01)
         // Diffues
         + albedo * global_ubo.sun.diffuse.rgb * L
         // specular
-        + specular * global_ubo.sun.specular.rgb * pow(S, 3);
+        + specular * global_ubo.sun.specular.rgb * pow(S, 5);
 
-    frag_color = vec4(color, 1);
+    // Gamma correction
+    frag_color = vec4(pow(color, vec3(1/2.2)), 1);
 }

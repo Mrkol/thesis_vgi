@@ -43,9 +43,9 @@ public:
     struct PageInfo
     {
         std::size_t image_index{NO_PAGE};
-        std::size_t image_mip;
-        std::size_t x;
-        std::size_t y;
+        std::size_t image_mip{};
+        std::size_t x{};
+        std::size_t y{};
     };
 
     void bump_page(PageInfo info);
@@ -56,8 +56,8 @@ public:
 
     void record_commands(vk::CommandBuffer cb);
 
-    vk::ImageView view() const { return cache_view.get(); }
-    vk::Sampler sampler() const { return cache_sampler.get(); }
+    [[nodiscard]] vk::ImageView view() const { return cache_view.get(); }
+    [[nodiscard]] vk::Sampler sampler() const { return cache_sampler.get(); }
     RingBuffer& get_indirection_table_sbo() { return indirection_tables_sbo; }
 
     [[nodiscard]] std::size_t get_mip_level_count() const { return image_mip_data[0].size(); }

@@ -206,7 +206,6 @@ void Renderer::render(float delta_seconds)
     scene->tick(delta_seconds);
     gui->render();
 
-
     uint32_t idx;
     {
         auto result = device->acquireNextImageKHR(swapchain_data.swapchain.get(),
@@ -391,22 +390,44 @@ void Renderer::create_swapchain()
         /* depth/stencil */ &depth_attachment_reference
     };
 
-    vk::SubpassDependency dependency{
-        /* src */ VK_SUBPASS_EXTERNAL,
-        /* dst */ 0,
-        /* src stages */
-        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-        /* dst stages */
-        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-        /* src access */ {},
-        /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite
+    std::array dependencies{
+        vk::SubpassDependency{
+            /* src */ VK_SUBPASS_EXTERNAL,
+            /* dst */ 0,
+            /* src stages */
+                      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+            /* dst stages */
+                      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+            /* src access */ {},
+            /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite
+        },
+        vk::SubpassDependency{
+            /* src */ VK_SUBPASS_EXTERNAL,
+            /* dst */ 0,
+            /* src stages */
+            vk::PipelineStageFlagBits::eTransfer,
+            /* dst stages */
+            vk::PipelineStageFlagBits::eTessellationEvaluationShader,
+            /* src access */ vk::AccessFlagBits::eTransferWrite,
+            /* dst access */ vk::AccessFlagBits::eShaderRead
+        },
+        vk::SubpassDependency{
+            /* src */ 0,
+            /* dst */ VK_SUBPASS_EXTERNAL,
+            /* src stages */
+            vk::PipelineStageFlagBits::eTessellationEvaluationShader,
+            /* dst stages */
+            vk::PipelineStageFlagBits::eTransfer,
+            /* src access */ vk::AccessFlagBits::eShaderRead,
+            /* dst access */ vk::AccessFlagBits::eTransferWrite
+        }
     };
 
     swapchain_data.render_pass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
         {},
         static_cast<uint32_t>(attachment_descriptions.size()), attachment_descriptions.data(),
         1, &subpass_description,
-        1, &dependency
+        static_cast<uint32_t>(dependencies.size()), dependencies.data()
     });
 
 
@@ -565,8 +586,8 @@ RingBuffer Renderer::create_dynamic_vbo(std::size_t size)
 {
     return RingBuffer({
         allocator, MAX_FRAMES_IN_FLIGHT, size,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-        VMA_MEMORY_USAGE_GPU_ONLY
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        VMA_MEMORY_USAGE_CPU_TO_GPU
     });
 }
 
