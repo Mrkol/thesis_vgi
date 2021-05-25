@@ -561,6 +561,15 @@ UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
     return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
+RingBuffer Renderer::create_dynamic_vbo(std::size_t size)
+{
+    return RingBuffer({
+        allocator, MAX_FRAMES_IN_FLIGHT, size,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+        VMA_MEMORY_USAGE_GPU_ONLY
+    });
+}
+
 UniqueVmaImage Renderer::create_texture(vk::Extent2D extent, std::size_t layers)
 {
     return UniqueVmaImage(allocator, vk::Format::eR8G8B8A8Srgb, extent, vk::ImageTiling::eOptimal,

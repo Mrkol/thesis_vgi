@@ -54,7 +54,7 @@ void main()
         // Diffues
         + albedo * global_ubo.sun.diffuse.rgb * L
         // specular
-        + 0.01 * specular * global_ubo.sun.specular.rgb * pow(S, 3);
+        + specular * global_ubo.sun.specular.rgb * pow(S, 3);
 
     frag_color = vec4(color, 1);
 }

@@ -46,7 +46,7 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
     }
 
 //    {
-//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
 //        vmesh->scale.setConstant(0.01f);
 //        vmesh->position << 0, 0, -5;
 //        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
@@ -54,21 +54,30 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //    }
 //
 //    {
-//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs");
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
 //        vmesh->scale.setConstant(0.01f);
 //        vmesh->position << 0, 0, -5;
 //        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
 //            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
 //        add_object(std::move(vmesh));
 //    }
+//
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");
+//        vmesh->scale.setConstant(0.01f);
+//        vmesh->position << -10, 0, 0;
+//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(vmesh));
+//    }
 
     {
         auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
-        vmesh->scale.setConstant(0.01f);
-        vmesh->position << 5, 0, 0;
+        vmesh->scale.setConstant(0.02f);
+        vmesh->position << 10, 0, 0;
         vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
         add_object(std::move(vmesh));
     }
+
 
     sun.direction << -1, 0, 1, 0;
     sun.diffuse << 1, 1, 1, 0;
@@ -101,7 +110,7 @@ void Scene::tick(float delta_seconds)
         perspective(static_cast<float>(EIGEN_PI/2),
             static_cast<float>(pipeline_creation_info.extent.width)
                 /static_cast<float>(pipeline_creation_info.extent.height),
-            .01f, 10.f),
+            .001f, 100.f),
         sun
     };
     global_uniform_buffer.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});

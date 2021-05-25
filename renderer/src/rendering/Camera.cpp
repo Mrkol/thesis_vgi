@@ -12,7 +12,7 @@ Eigen::Matrix4f Camera::view() const
         ).matrix();
 }
 
-void Camera::move(Eigen::Vector3f direction, float speed)
+void Camera::move(const Eigen::Vector3f& direction, float speed)
 {
     position += Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()) * direction.normalized() * speed;
 }
@@ -22,5 +22,4 @@ void Camera::rotate(float dyaw, float dpitch)
     yaw += dyaw * 0.001f;
     pitch += dpitch * 0.001f;
     pitch = std::clamp<float>(pitch, 0, EIGEN_PI);
-
 }

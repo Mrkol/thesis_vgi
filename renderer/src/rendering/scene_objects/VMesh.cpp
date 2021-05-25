@@ -204,7 +204,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
         auto nodes = current_cut.get_nodes();
 
-        static constexpr float TARGET_POLYGONS_PER_PIXEL = 1.f/128.f;
+        static constexpr float TARGET_POLYGONS_PER_PIXEL = 1.f/64.f;
 
         auto wanted_mip =
             [&raw_ubo, &tick_info](QuadtreeNode* node)

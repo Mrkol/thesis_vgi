@@ -105,12 +105,11 @@ void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::si
 
     if (auto prev_state = cache_state[lru]; prev_state.image_index != NO_PAGE)
     {
-        indirection_tables(prev_state.image_index, prev_state.image_mip - min_mip, prev_state.x, prev_state.y)
-            = IndirectionTables::EMPTY;
+        access_indirection_table(prev_state) = IndirectionTables::EMPTY;
     }
     cache_state[lru] = info;
 
-    indirection_tables(info.image_index, info.image_mip - min_mip, info.x, info.y) = lru;
+    access_indirection_table(info) = lru;
     cache_lifetimes[lru] = gen;
 
     for (std::size_t i = 0; i < format_multiplicity; ++i)
@@ -156,6 +155,11 @@ void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::si
     }
 }
 
+uint32_t& VirtualTextureSet::access_indirection_table(VirtualTextureSet::PageInfo info)
+{
+    return indirection_tables(info.image_index, info.image_mip - min_mip, info.x, info.y);
+}
+
 void VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, float x, float y, float size)
 {
     std::size_t total_size = mip_to_size(mip);
@@ -182,6 +186,8 @@ void VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, float x,
 void VirtualTextureSet::tick()
 {
     indirection_tables_sbo.write_next(std::span{indirection_tables.get_data(), indirection_tables.size()});
+    staging_buffer.next();
+    ++generation;
 }
 
 void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
@@ -190,23 +196,17 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
     {
         cache.transfer_layout(cb,
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal,
-            {}, vk::AccessFlagBits::eTransferWrite,
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
-
+            vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eTransferWrite,
+            vk::PipelineStageFlagBits::eTessellationEvaluationShader, vk::PipelineStageFlagBits::eTransfer);
 
         cb.copyBufferToImage(staging_buffer.get(), cache.get(), vk::ImageLayout::eTransferDstOptimal,
             static_cast<uint32_t>(staging_targets.size()), staging_targets.data());
+        staging_targets.clear();
 
         cache.transfer_layout(cb,
             vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
-            vk::PipelineStageFlagBits::eTransfer,
-            vk::PipelineStageFlagBits::eTessellationEvaluationShader | vk::PipelineStageFlagBits::eFragmentShader);
-
-
-        staging_buffer.next();
-        ++generation;
-        staging_targets.clear();
+            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTessellationEvaluationShader);
     }
 }
 

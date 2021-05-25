@@ -26,8 +26,8 @@ def read_pts(context, filepath):
             floats = [struct.unpack(fmt, data[8*fp_size*i:8*fp_size*(i+1)]) for i in range(3)]
             x = len(vertices)
             triangles.append((x, x + 1, x + 2))
-            vertices += [floats[i][0:3] for i in range(3)]
-            uvs += [floats[i][6:8] for i in range(3)]
+            vertices += [floats[3*i] for i in range(3)]
+            uvs += [floats[2 + 3*i] for i in range(3)]
 
             data = f.read(8 * 3 * fp_size)
 

@@ -9,7 +9,7 @@ class Camera
 public:
     [[nodiscard]] Eigen::Matrix4f view() const;
 
-    void move(Eigen::Vector3f direction, float speed);
+    void move(const Eigen::Vector3f& direction, float speed);
     void rotate(float dyaw, float dpitch);
 
     void set_position(Eigen::Vector3f pos) { position = std::move(pos); };

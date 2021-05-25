@@ -67,6 +67,8 @@ public:
 private:
     void bump_page_impl(PageInfo info, std::size_t gen);
 
+    [[nodiscard]] uint32_t& access_indirection_table(PageInfo info);
+
     [[nodiscard]] std::size_t page_size() const { return pixel_size * page_side_size * page_side_size; }
 
 private:
