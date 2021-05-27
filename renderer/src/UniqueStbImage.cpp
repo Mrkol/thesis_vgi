@@ -6,7 +6,7 @@
 UniqueStbImage::UniqueStbImage(const std::filesystem::path& path)
 {
     int x, y, n;
-    auto d = stbi_load(path.c_str(), &x, &y, &n, 4);
+    auto d = stbi_load(path.string().c_str(), &x, &y, &n, 4);
     if (d == nullptr)
     {
         throw std::runtime_error("Unable to load texture!");

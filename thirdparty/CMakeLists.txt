@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 
+find_package(glfw3 3.3 REQUIRED)
+find_package(Vulkan REQUIRED)
+
+
+
 add_subdirectory(function2)
 
 add_library(VulkanMemoryAllocator INTERFACE)
@@ -14,3 +19,5 @@ add_library(DearImGui imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cp
 target_include_directories(DearImGui PUBLIC imgui)
 target_add_shaders(DearImGui ${CMAKE_CURRENT_LIST_DIR}/imgui/backends/vulkan/glsl_shader.frag
         ${CMAKE_CURRENT_LIST_DIR}/imgui/backends/vulkan/glsl_shader.vert)
+target_link_libraries(DearImGui Vulkan::Vulkan)
+target_link_libraries(DearImGui glfw)

@@ -2,6 +2,8 @@
 
 #include <fstream>
 
+
+#include "FileStreamPool.hpp"
 #include "clustering/Gridify.hpp"
 #include "clustering/InCoreClustering.hpp"
 #include "clustering/OutOfCoreClustering.hpp"
@@ -53,7 +55,9 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                     auto triangles = read_plainfile(cells[i]);
                     if (cells[i].filename() == BORDER_FILENAME)
                     {
+                        triangles = fixup_border(std::move(triangles));
                         datas[i] = triangle_soup_to_clusters(triangles);
+                        write_plainfile(cells[i], triangles);
                         return;
                     }
 
@@ -88,18 +92,15 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
     {
         std::ifstream plain{plainfile, std::ios_base::binary};
 
-        std::vector<std::ofstream> cluster_files;
-        cluster_files.reserve(total_clustering_data.patches.size());
-        for (std::size_t i = 0; i < total_clustering_data.patches.size(); ++i)
-        {
-            cluster_files.emplace_back(clusters_path / std::to_string(i), std::ios_base::binary);
-        }
+        FileStreamPool<std::ofstream> file_pool{500};
 
         ThickTriangle triangle;
         std::size_t idx = 0;
         while (plain.read(reinterpret_cast<char*>(&triangle), sizeof(triangle)))
         {
-            cluster_files[total_clustering_data.accumulated_mapping[idx]]
+            auto i = total_clustering_data.accumulated_mapping[idx];
+            file_pool
+                .get(clusters_path / std::to_string(i), std::ios_base::binary | std::ios_base::app)
                 .write(reinterpret_cast<char*>(&triangle), sizeof(triangle));
             ++idx;
         }
@@ -196,7 +197,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
                     for (std::size_t i = 0; i < quads.size(); ++i)
                     {
                         auto& quad = quads[i];
-                        std::string name = cell.filename().string() + ":" + std::to_string(i);
+                        std::string name = cell.filename().string() + "," + std::to_string(i);
                         write_plainfile(cell.parent_path() / name, quad.triangles);
                         {
                             std::ofstream info_file{quad_info_path / name, std::ios_base::binary};
@@ -294,7 +295,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
 
                         auto result = resampler.resample(quad, mapping, StaticThreadPool::current_thread_index());
 
-                        std::string filename = quad_path.filename().string() + ":" + std::to_string(mip_level);
+                        std::string filename = quad_path.filename().string() + "," + std::to_string(mip_level);
 
                         std::ofstream out{resampled_dir / filename, std::ios_base::binary};
 

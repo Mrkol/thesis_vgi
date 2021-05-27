@@ -20,7 +20,7 @@ Gui::Gui(CreateInfo info)
         vk::DescriptorPoolSize{vk::DescriptorType::eStorageBufferDynamic, 1000},
         vk::DescriptorPoolSize{vk::DescriptorType::eInputAttachment, 1000},
     };
-    descriptor_pool = info.device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
+    descriptor_pool_ = info.device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
         {},
         /* max sets */ 1000 * static_cast<uint32_t>(pool_sizes.size()),
         /* pool sizes */ static_cast<uint32_t>(pool_sizes.size()), pool_sizes.data()
@@ -57,7 +57,7 @@ Gui::Gui(CreateInfo info)
         /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite
     };
 
-    render_pass = info.device.createRenderPassUnique(vk::RenderPassCreateInfo{
+    render_pass_ = info.device.createRenderPassUnique(vk::RenderPassCreateInfo{
         {},
         static_cast<uint32_t>(attachment_descriptions.size()), attachment_descriptions.data(),
         1, &subpass_description,
@@ -72,7 +72,7 @@ Gui::Gui(CreateInfo info)
         .QueueFamily = info.graphics_queue_idx,
         .Queue = info.graphics_queue,
         .PipelineCache = VK_NULL_HANDLE,
-        .DescriptorPool = descriptor_pool.get(),
+        .DescriptorPool = descriptor_pool_.get(),
         .MinImageCount = 2,
         .ImageCount = static_cast<uint32_t>(info.swapchain_size),
         .MSAASamples = VkSampleCountFlagBits::VK_SAMPLE_COUNT_1_BIT,
@@ -86,7 +86,7 @@ Gui::Gui(CreateInfo info)
         },
     };
 
-    ImGui_ImplVulkan_Init(&init_info, render_pass.get());
+    ImGui_ImplVulkan_Init(&init_info, render_pass_.get());
 
     auto cb = info.irm->begin_single_time_commands();
     ImGui_ImplVulkan_CreateFontsTexture(cb.get());
@@ -116,7 +116,7 @@ void Gui::record_commands(vk::CommandBuffer cb, vk::Framebuffer framebuffer, vk:
     };
 
     cb.beginRenderPass(vk::RenderPassBeginInfo{
-        render_pass.get(), framebuffer, area,
+        render_pass_.get(), framebuffer, area,
         static_cast<uint32_t>(clear_colors.size()), clear_colors.data()
     }, vk::SubpassContents::eInline);
 

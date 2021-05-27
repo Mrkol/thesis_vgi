@@ -180,7 +180,7 @@ AtlasPatch::AtlasPatch(CreateInfo info)
     for (std::size_t i = info.min_mip; i <= info.max_mip; ++i)
     {
         gis.emplace_back(
-            info.images_folder / (std::string{info.name_prefix} + ":" + std::to_string(i))
+            info.images_folder / (std::string{info.name_prefix} + "," + std::to_string(i))
         );
     }
 
@@ -218,7 +218,7 @@ HierarchicalAtlas::HierarchicalAtlas(std::filesystem::path images_folder)
     for (auto& entry : std::filesystem::directory_iterator(images_folder))
     {
         auto name = entry.path().filename().string();
-        auto pos = name.rfind(':');
+        auto pos = name.rfind(',');
         prefixes.emplace(name.substr(0, pos));
         std::size_t mip = std::stoul(name.substr(pos + 1));
         min_mip = std::min(min_mip, mip);

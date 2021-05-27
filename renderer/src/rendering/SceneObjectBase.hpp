@@ -35,19 +35,19 @@ public:
     /**
      * Object will die on the next tick
      */
-    void kill() { alive = false; }
-    [[nodiscard]] bool is_alive() const { return alive; }
+    void kill() { alive_ = false; }
+    [[nodiscard]] bool is_alive() const { return alive_; }
 
     virtual ~SceneObjectBase() = default;
 
 private:
-    bool alive{true};
+    bool alive_{true};
 };
 
 class SceneObjectType
 {
 public:
-    explicit SceneObjectType(IResourceManager* irm) : resource_manager(irm) {};
+    explicit SceneObjectType(IResourceManager* irm) : resource_manager_(irm) {};
 
     virtual void tick(float delta_seconds, TickInfo tick_info) {};
 
@@ -63,18 +63,16 @@ public:
     };
 
     virtual vk::UniquePipeline create_pipeline(PipelineCreateInfo info) = 0;
-    vk::PipelineLayout get_pipeline_layout() const { return pipeline_layout.get(); }
-    IResourceManager* get_resource_manager() const { return resource_manager; }
-    vk::DescriptorSetLayout get_type_descriptor_set_layout() const { return type_descriptor_set_layout.get(); }
-    vk::DescriptorSetLayout get_instance_descriptor_set_layout() const { return instance_descriptor_set_layout.get(); }
+    vk::PipelineLayout get_pipeline_layout() const { return pipeline_layout_.get(); }
+    IResourceManager* get_resource_manager() const { return resource_manager_; }
+    vk::DescriptorSetLayout get_instance_descriptor_set_layout() const { return instance_descriptor_set_layout_.get(); }
 
     virtual ~SceneObjectType() = default;
 
 protected:
-    IResourceManager* resource_manager;
-    vk::UniquePipelineLayout pipeline_layout;
-    vk::UniqueDescriptorSetLayout type_descriptor_set_layout;
-    vk::UniqueDescriptorSetLayout instance_descriptor_set_layout;
+    IResourceManager* resource_manager_;
+    vk::UniquePipelineLayout pipeline_layout_;
+    vk::UniqueDescriptorSetLayout instance_descriptor_set_layout_;
 };
 
 class SceneObjectTypeFactory

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <filesystem>
-
 #include "Clustering.hpp"
 
+
+std::vector<ThickTriangle> fixup_border(std::vector<ThickTriangle> triangles);
 
 ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& triangles);
 

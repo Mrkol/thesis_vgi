@@ -9,7 +9,7 @@
 #include "VkHelpers.hpp"
 
 
-struct __attribute__((packed)) Vertex
+struct Vertex
 {
     Eigen::Vector2f mapped_position;
     Eigen::Vector3f position;

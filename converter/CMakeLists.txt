@@ -18,6 +18,7 @@ file(GLOB_RECURSE src_converter ${CMAKE_CURRENT_LIST_DIR}/src/*.cpp)
 file(GLOB_RECURSE shaders_converter ${CMAKE_CURRENT_LIST_DIR}/shaders/*)
 
 add_executable(converter ${src_converter})
+target_link_libraries(converter function2::function2)
 target_link_libraries(converter Eigen3::Eigen)
 target_link_libraries(converter Vulkan::Vulkan)
 target_link_libraries(converter cxxopts::cxxopts)

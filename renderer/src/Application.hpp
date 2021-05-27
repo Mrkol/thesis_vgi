@@ -54,16 +54,16 @@ private:
 
 private:
     using Clock = std::chrono::steady_clock;
-    Clock::time_point last_tick;
+    Clock::time_point last_tick_;
 
-    std::unique_ptr<GLFWwindow, void (*)(GLFWwindow*)> main_window;
-    vk::UniqueInstance vulkan_instance;
-    std::unique_ptr<Renderer> renderer;
+    std::unique_ptr<GLFWwindow, void (*)(GLFWwindow*)> main_window_;
+    vk::UniqueInstance vulkan_instance_;
+    std::unique_ptr<Renderer> renderer_;
 
-    Eigen::Vector3i cam_velocity{0, 0, 0};
-    float cam_speed = 1;
-    Eigen::Vector2f prev_mouse_pos{0, 0};
-    bool move_camera{false};
+    Eigen::Vector3i cam_velocity_{0, 0, 0};
+    float cam_speed_ = 1;
+    Eigen::Vector2f prev_mouse_pos_{0, 0};
+    bool move_camera_{false};
 
-    bool shader_hotswap_requested{false};
+    bool shader_hotswap_requested_{false};
 };

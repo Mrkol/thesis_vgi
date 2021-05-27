@@ -1,6 +1,7 @@
 #include "Scene.hpp"
 
 #include <imgui.h>
+#include <functional>
 
 #include "SceneObjectBase.hpp"
 #include "scene_objects/Grid.hpp"
@@ -18,9 +19,9 @@ struct GlobalUBO
 
 
 Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
-    : resource_manager{irm}
-    , pipeline_creation_info{info}
-    , global_uniform_buffer{irm->create_ubo(sizeof(GlobalUBO))}
+    : resource_manager_{irm}
+    , pipeline_creation_info_{info}
+    , global_uniform_buffer_{irm->create_ubo(sizeof(GlobalUBO))}
 {
     vk::DescriptorSetLayoutBinding binding{
         /* binding */ 0,
@@ -32,12 +33,12 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         nullptr
     };
 
-    global_descriptor_set_layout = irm->get_device().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
+    global_descriptor_set_layout_ = irm->get_device().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
         {}, 1, &binding
     });
 
-    global_uniforms = irm->create_descriptor_set_ring(global_descriptor_set_layout.get());
-    global_uniforms.write_ubo(global_uniform_buffer, 0);
+    global_uniforms_ = irm->create_descriptor_set_ring(global_descriptor_set_layout_.get());
+    global_uniforms_.write_ubo(global_uniform_buffer_, 0);
 
     {
         auto grid = std::make_unique<GridSceneObject>(16);
@@ -45,13 +46,13 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         add_object(std::move(grid));
     }
 
-//    {
-//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
-//        vmesh->scale.setConstant(0.01f);
-//        vmesh->position << 0, 0, -5;
-//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-//        add_object(std::move(vmesh));
-//    }
+    {
+        auto vmesh = std::make_unique<VMesh>("../../../models/rock_sandstone");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << 0, 0, -5;
+        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(vmesh));
+    }
 //
 //    {
 //        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
@@ -71,33 +72,33 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //    }
 
     {
-        auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
+        auto vmesh = std::make_unique<VMesh>("../../../models/rock_cliffs");
         vmesh->scale.setConstant(0.02f);
         vmesh->position << 10, 0, 0;
-        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        vmesh->rotation = Eigen::AngleAxisf(static_cast<float>(-EIGEN_PI/2), Eigen::Vector3f::UnitX());
         add_object(std::move(vmesh));
     }
 
 
-    sun.direction << -1, 0, 1, 0;
-    sun.diffuse << 1, 1, 1, 0;
-    sun.specular << 1, 1, 1, 0;
+    sun_.direction << -1, 0, 1, 0;
+    sun_.diffuse << 1, 1, 1, 0;
+    sun_.specular << 1, 1, 1, 0;
 }
 
 void Scene::recreate_pipelines(PipelineCreationInfo info)
 {
-    pipeline_creation_info = info;
+    pipeline_creation_info_ = info;
 
-    for (auto&[_, type_data] : object_types)
+    for (auto&[_, type_data] : object_types_)
     {
         type_data.pipeline = type_data.type->create_pipeline(
-            {info.extent, global_descriptor_set_layout.get(), info.render_pass});
+            {info.extent, global_descriptor_set_layout_.get(), info.render_pass});
     }
 }
 
 void Scene::reload_shaders()
 {
-    for (auto&[name, info] : object_types)
+    for (auto&[name, info] : object_types_)
     {
         info.type->reload_shaders();
     }
@@ -106,36 +107,36 @@ void Scene::reload_shaders()
 void Scene::tick(float delta_seconds)
 {
     GlobalUBO ubo{
-        camera.view(),
+        camera_.view(),
         perspective(static_cast<float>(EIGEN_PI/2),
-            static_cast<float>(pipeline_creation_info.extent.width)
-                /static_cast<float>(pipeline_creation_info.extent.height),
+            static_cast<float>(pipeline_creation_info_.extent.width)
+                /static_cast<float>(pipeline_creation_info_.extent.height),
             .001f, 100.f),
-        sun
+        sun_
     };
-    global_uniform_buffer.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
+    global_uniform_buffer_.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
 
 
-    for (auto& kv : object_types)
+    for (auto& kv : object_types_)
     {
         auto&[type, _, instances] = kv.second;
-        type->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info.extent});
+        type->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info_.extent});
         for (auto instance : instances)
         {
-            instance->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info.extent});
+            instance->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info_.extent});
         }
 
-        std::erase_if(instances, std::not1(std::mem_fn(&SceneObjectBase::is_alive)));
+        std::erase_if(instances, std::not_fn(std::mem_fn(&SceneObjectBase::is_alive)));
     }
 
-    std::erase_if(scene_objects, [](const auto& uptr) { return !uptr->is_alive(); });
+    std::erase_if(scene_objects_, [](const auto& uptr) { return !uptr->is_alive(); });
 
-    std::erase_if(object_types, [](const auto& kv) { return kv.second.instances.empty(); });
+    std::erase_if(object_types_, [](const auto& kv) { return kv.second.instances.empty(); });
 }
 
 void Scene::record_pre_commands(vk::CommandBuffer cb)
 {
-    for (auto& object : scene_objects)
+    for (auto& object : scene_objects_)
     {
         object->record_pre_commands(cb);
     }
@@ -143,13 +144,13 @@ void Scene::record_pre_commands(vk::CommandBuffer cb)
 
 void Scene::record_commands(vk::CommandBuffer cb)
 {
-    for (auto& kv : object_types)
+    for (auto& kv : object_types_)
     {
         auto&[type, pipeline, instances] = kv.second;
 
         cb.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
         cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, type->get_pipeline_layout(), 0,
-            {global_uniforms.read_next()}, {});
+            {global_uniforms_.read_next()}, {});
 
 
         for (auto& instance : instances)
@@ -164,22 +165,22 @@ void Scene::add_object(std::unique_ptr<SceneObjectBase> object)
     auto& factory = object->get_scene_object_type_factory();
     auto type_name = factory.get_name();
 
-    auto it = object_types.find(type_name);
+    auto it = object_types_.find(type_name);
 
-    if (it == object_types.end())
+    if (it == object_types_.end())
     {
         PerTypeInfo info{
-            factory.create(resource_manager)
+            factory.create(resource_manager_)
         };
 
         info.pipeline = info.type->create_pipeline(
-            {pipeline_creation_info.extent, global_descriptor_set_layout.get(), pipeline_creation_info.render_pass});
+            {pipeline_creation_info_.extent, global_descriptor_set_layout_.get(), pipeline_creation_info_.render_pass});
 
-        it = object_types.emplace(type_name, std::move(info)).first;
+        it = object_types_.emplace(type_name, std::move(info)).first;
     }
 
     it->second.instances.push_back(object.get());
 
-    scene_objects.emplace_back(std::move(object))
+    scene_objects_.emplace_back(std::move(object))
         ->on_type_object_available(*it->second.type);
 }

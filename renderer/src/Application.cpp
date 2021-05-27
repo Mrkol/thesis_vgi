@@ -20,15 +20,15 @@ constexpr const char* APP_NAME = "VGI renderer";
 
 
 Application::Application(int argc, char** argv)
-    : last_tick(Clock::now())
-    , main_window{glfwCreateWindow(800, 600, APP_NAME, nullptr, nullptr), &glfwDestroyWindow}
+    : last_tick_(Clock::now())
+    , main_window_{glfwCreateWindow(800, 600, APP_NAME, nullptr, nullptr), &glfwDestroyWindow}
 {
     parse_arguments(argc, argv);
 
-    glfwSetWindowUserPointer(main_window.get(), this);
-    glfwSetFramebufferSizeCallback(main_window.get(), on_window_resized);
-    glfwSetKeyCallback(main_window.get(), on_key_event);
-    glfwSetMouseButtonCallback(main_window.get(), on_mouse_button);
+    glfwSetWindowUserPointer(main_window_.get(), this);
+    glfwSetFramebufferSizeCallback(main_window_.get(), on_window_resized);
+    glfwSetKeyCallback(main_window_.get(), on_key_event);
+    glfwSetMouseButtonCallback(main_window_.get(), on_mouse_button);
 
     VkHelpers::check_validation_layers_support(VALIDATION_LAYERS);
 
@@ -41,14 +41,14 @@ Application::Application(int argc, char** argv)
     uint32_t glfwExtCount;
     auto glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
-    vulkan_instance = vk::createInstanceUnique(vk::InstanceCreateInfo{
+    vulkan_instance_ = vk::createInstanceUnique(vk::InstanceCreateInfo{
         {}, &application_info,
         static_cast<uint32_t>(VALIDATION_LAYERS.size()), VALIDATION_LAYERS.data(),
         glfwExtCount, glfwExts
     });
 
     VkSurfaceKHR surface;
-    if (glfwCreateWindowSurface(VkInstance(vulkan_instance.get()), main_window.get(), nullptr, &surface) != VK_SUCCESS) {
+    if (glfwCreateWindowSurface(VkInstance(vulkan_instance_.get()), main_window_.get(), nullptr, &surface) != VK_SUCCESS) {
         AD_HOC_PANIC("Unable to create VK surface!");
     }
 
@@ -58,20 +58,20 @@ Application::Application(int argc, char** argv)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
 
-    ImGui_ImplGlfw_InitForVulkan(main_window.get(), true);
+    ImGui_ImplGlfw_InitForVulkan(main_window_.get(), true);
 
-    renderer = std::make_unique<Renderer>(vulkan_instance.get(),
+    renderer_ = std::make_unique<Renderer>(vulkan_instance_.get(),
         vk::UniqueSurfaceKHR{surface,
-            vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>{vulkan_instance.get()}},
+            vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>{vulkan_instance_.get()}},
         std::span{VALIDATION_LAYERS}.subspan<0>(),
         [this]()
         {
             int width, height;
-            glfwGetFramebufferSize(main_window.get(), &width, &height);
+            glfwGetFramebufferSize(main_window_.get(), &width, &height);
 
             while (width == 0 || height == 0)
             {
-                glfwGetFramebufferSize(main_window.get(), &width, &height);
+                glfwGetFramebufferSize(main_window_.get(), &width, &height);
                 glfwWaitEvents();
             }
 
@@ -83,8 +83,8 @@ int Application::run()
 {
     // kostyl
     glfwPollEvents();
-    prev_mouse_pos = poll_cursor();
-    while(!glfwWindowShouldClose(main_window.get()))
+    prev_mouse_pos_ = poll_cursor();
+    while(!glfwWindowShouldClose(main_window_.get()))
     {
         glfwPollEvents();
 
@@ -92,12 +92,12 @@ int Application::run()
         ImGui_ImplGlfw_NewFrame();
         auto this_tick = Clock::now();
         float delta_seconds =
-            std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1, 1>>>(this_tick - last_tick).count();
-        last_tick = this_tick;
+            std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1, 1>>>(this_tick - last_tick_).count();
+        last_tick_ = this_tick;
 
 
         tick(delta_seconds);
-        renderer->render(delta_seconds);
+        renderer_->render(delta_seconds);
     }
 
     return 0;
@@ -105,24 +105,24 @@ int Application::run()
 
 void Application::tick(float delta_seconds)
 {
-    auto* cam = renderer->debug_get_scene()->debug_get_camera();
-    cam->move(cam_velocity.cast<float>(), 1.4f * delta_seconds * cam_speed);
+    auto* cam = renderer_->debug_get_scene()->debug_get_camera();
+    cam->move(cam_velocity_.cast<float>(), 1.4f * delta_seconds * cam_speed_);
 
     {
         auto c = poll_cursor();
 
-        if (move_camera)
+        if (move_camera_)
         {
-            Eigen::Vector2f d = c - prev_mouse_pos;
+            Eigen::Vector2f d = c - prev_mouse_pos_;
             cam->rotate(d.x(), d.y());
         }
 
-        prev_mouse_pos = c;
+        prev_mouse_pos_ = c;
     }
 
-    if (std::exchange(shader_hotswap_requested, false))
+    if (std::exchange(shader_hotswap_requested_, false))
     {
-        renderer->hotswap_shaders();
+        renderer_->hotswap_shaders();
     }
 }
 
@@ -144,7 +144,7 @@ Application::Config Application::parse_arguments(int argc, char** argv)
 void Application::on_window_resized(GLFWwindow* window, int width, int height)
 {
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
-    app->renderer->on_window_resized();
+    app->renderer_->on_window_resized();
 }
 
 void Application::on_key_event(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -164,23 +164,23 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
 
     if (key == GLFW_KEY_R && action == GLFW_RELEASE)
     {
-        app->shader_hotswap_requested = true;
+        app->shader_hotswap_requested_ = true;
         return;
     }
 
     int coeff = action == GLFW_PRESS ? 1 : (action == GLFW_RELEASE ? -1 : 0);
-    app->cam_velocity.y() += coeff*(key == GLFW_KEY_W)     - coeff*(key == GLFW_KEY_S);
-    app->cam_velocity.x() += coeff*(key == GLFW_KEY_A)     - coeff*(key == GLFW_KEY_D);
-    app->cam_velocity.z() += coeff*(key == GLFW_KEY_SPACE) - coeff*(key == GLFW_KEY_LEFT_SHIFT);
+    app->cam_velocity_.y() += coeff*(key == GLFW_KEY_W)     - coeff*(key == GLFW_KEY_S);
+    app->cam_velocity_.x() += coeff*(key == GLFW_KEY_A)     - coeff*(key == GLFW_KEY_D);
+    app->cam_velocity_.z() += coeff*(key == GLFW_KEY_SPACE) - coeff*(key == GLFW_KEY_LEFT_SHIFT);
     if (key == GLFW_KEY_LEFT_CONTROL)
     {
         if (action == GLFW_PRESS)
         {
-            app->cam_speed = 2;
+            app->cam_speed_ = 2;
         }
         else
         {
-            app->cam_speed = 1;
+            app->cam_speed_ = 1;
         }
     }
 }
@@ -188,7 +188,7 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
 Eigen::Vector2f Application::poll_cursor()
 {
     double x, y;
-    glfwGetCursorPos(main_window.get(), &x, &y);
+    glfwGetCursorPos(main_window_.get(), &x, &y);
     return {x, y};
 }
 
@@ -206,11 +206,11 @@ void Application::on_mouse_button(GLFWwindow* window, int button, int action, in
         if (action == GLFW_PRESS)
         {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            app->move_camera = true;
+            app->move_camera_ = true;
         }
         else if (action == GLFW_RELEASE)
         {
-            app->move_camera = false;
+            app->move_camera_ = false;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         }
     }

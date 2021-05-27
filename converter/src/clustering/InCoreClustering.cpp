@@ -3,9 +3,98 @@
 #include <queue>
 #include <compare>
 #include <numeric>
+#include <stack>
+
 
 #include "../DualSurfaceGraph.hpp"
+#include "../SurfaceGraph.hpp"
 
+
+std::vector<ThickTriangle> fixup_border(std::vector<ThickTriangle> triangles)
+{
+    DualSurfaceGraph dual_graph(triangles);
+    SurfaceGraph graph(triangles);
+
+    std::unordered_set<std::size_t> border_vertices;
+    for (std::size_t i = 0; i < triangles.size(); ++i)
+    {
+        auto edges = triangle_edges(triangles[i]);
+        for (const auto& edge : edges)
+        {
+            if (dual_graph.find_not(edge, i) == DualSurfaceGraph::INVALID)
+            {
+                border_vertices.emplace(graph.index_of(edge.first));
+                border_vertices.emplace(graph.index_of(edge.second));
+            }
+        }
+    }
+
+    static constexpr std::size_t NONE = std::numeric_limits<std::size_t>::max();
+
+    std::vector<std::size_t> colors(graph.vertex_count(), NONE);
+
+    std::size_t color = 0;
+    for (auto i : border_vertices)
+    {
+        if (colors[i] != NONE)
+        {
+            continue;
+        }
+        
+        std::stack<std::size_t> vert_stack;
+        vert_stack.push(i);
+
+        while (!vert_stack.empty())
+        {
+            auto current = vert_stack.top();
+            vert_stack.pop();
+
+            if (colors[current] != NONE
+                || !border_vertices.contains(current))
+            {
+                continue;
+            }
+
+            colors[current] = color;
+
+            for (auto adj : graph.adjacent_to(current))
+            {
+                auto[f, s] = dual_graph.find(SymmetricEdge{graph.coords(current), graph.coords(adj)});
+                if (s != DualSurfaceGraph::INVALID)
+                {
+                    continue;
+                }
+
+                vert_stack.push(adj);
+            }
+        }
+
+        ++color;
+    }
+
+
+    std::unordered_set<SymmetricPair<std::size_t>> edges_to_split;
+
+    for (auto i : border_vertices)
+    {
+        for (auto j : graph.adjacent_to(i))
+        {
+            auto[f, s] = dual_graph.find(SymmetricEdge{graph.coords(i), graph.coords(j)});
+
+            if (s != NONE && colors[i] == colors[j])
+            {
+                edges_to_split.emplace(i, j);
+            }
+        }
+    }
+
+    for (auto[i, j] : edges_to_split)
+    {
+        dual_graph.split_edge(triangles, graph.coords(i), graph.coords(j));
+    }
+
+    return triangles;
+}
 
 ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& triangles)
 {
@@ -104,9 +193,9 @@ ClusteringData triangle_soup_to_clusters(const std::vector<ThickTriangle>& trian
 ClusteringData incore_cluster(const std::vector<ThickTriangle>& triangles, ClusteringMetricConfig metric_config,
     std::size_t target_memory, FloatingNumber max_error, FloatingNumber min_relative_cluster_count_change)
 {
-	ClusteringConfig config
+    ClusteringConfig config
     {
-	    metric_config,
+        metric_config,
         [target_memory, total = triangles.size(), min_relative_cluster_count_change, max_error]
         (FloatingNumber error, std::size_t patch_count, std::size_t memory)
         {
@@ -115,5 +204,5 @@ ClusteringData incore_cluster(const std::vector<ThickTriangle>& triangles, Clust
         }
     };
 
-	return cluster(triangle_soup_to_clusters(triangles), std::move(config));
+    return cluster(triangle_soup_to_clusters(triangles), std::move(config));
 }

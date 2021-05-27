@@ -25,21 +25,21 @@ std::size_t grid_size_to_vert_count(std::size_t size)
 }
 
 GridSceneObject::GridSceneObject(std::size_t size)
-    : size(size)
+    : size_(size)
 {
 }
 
 void GridSceneObject::on_type_object_available(SceneObjectType& type)
 {
     // Type is guaranteed to be ours
-    our_type = dynamic_cast<GridSceneObjectType*>(&type);
+    our_type_ = dynamic_cast<GridSceneObjectType*>(&type);
 
     // No need to release the old one, as the entire type object was recreated if this was called
-    vbo = our_type->acquire_vbo(size);
-    uniform_buffer = our_type->get_resource_manager()->create_ubo(sizeof(UBO));
-    uniforms =
-        our_type->get_resource_manager()->create_descriptor_set_ring(our_type->get_instance_descriptor_set_layout());
-    uniforms.write_ubo(uniform_buffer, 0);
+    vbo_ = our_type_->acquire_vbo(size_);
+    uniform_buffer_ = our_type_->get_resource_manager()->create_ubo(sizeof(UBO));
+    uniforms_ =
+        our_type_->get_resource_manager()->create_descriptor_set_ring(our_type_->get_instance_descriptor_set_layout());
+    uniforms_.write_ubo(uniform_buffer_, 0);
 }
 
 void GridSceneObject::tick(float delta_seconds, TickInfo tick_info)
@@ -53,17 +53,17 @@ void GridSceneObject::tick(float delta_seconds, TickInfo tick_info)
         * Eigen::AlignedScaling3f(scale)
         ).matrix()
     };
-    uniform_buffer.write_next({reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
+    uniform_buffer_.write_next({reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
 }
 
 void GridSceneObject::record_commands(vk::CommandBuffer cb)
 {
     std::array offsets{vk::DeviceSize{0}};
-    cb.bindVertexBuffers(0, 1, &vbo, offsets.data());
-    std::array sets{uniforms.read_next()};
-    cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type->get_pipeline_layout(), 1,
+    cb.bindVertexBuffers(0, 1, &vbo_, offsets.data());
+    std::array sets{uniforms_.read_next()};
+    cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type_->get_pipeline_layout(), 1,
         static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
-    cb.draw(grid_size_to_vert_count(size), 1, 0, 0);
+    cb.draw(static_cast<uint32_t>(grid_size_to_vert_count(size_)), 1, 0, 0);
 }
 
 const SceneObjectTypeFactory& GridSceneObject::get_scene_object_type_factory() const
@@ -74,30 +74,30 @@ const SceneObjectTypeFactory& GridSceneObject::get_scene_object_type_factory() c
 
 GridSceneObject::~GridSceneObject()
 {
-    if (our_type)
+    if (our_type_)
     {
-        our_type->release_vbo(size);
+        our_type_->release_vbo(size_);
     }
 }
 
 GridSceneObjectType::GridSceneObjectType(IResourceManager* irm)
     : SceneObjectType(irm)
-    , vertex_shader{VkHelpers::read_shader("debug.vert")}
-    , fragment_shader{VkHelpers::read_shader("debug.frag")}
+    , vertex_shader_{VkHelpers::read_shader("debug.vert")}
+    , fragment_shader_{VkHelpers::read_shader("debug.frag")}
 {
 }
 
 vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
 {
-    auto device = resource_manager->get_device();
+    auto device = resource_manager_->get_device();
     auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
         {},
-        vertex_shader.size(), reinterpret_cast<const uint32_t*>(vertex_shader.data())
+        vertex_shader_.size(), reinterpret_cast<const uint32_t*>(vertex_shader_.data())
     });
 
     auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
         {},
-        fragment_shader.size(), reinterpret_cast<const uint32_t*>(fragment_shader.data())
+        fragment_shader_.size(), reinterpret_cast<const uint32_t*>(fragment_shader_.data())
     });
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{
@@ -179,16 +179,16 @@ vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
         nullptr
     };
 
-    instance_descriptor_set_layout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
+    instance_descriptor_set_layout_ = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
         {}, 1, &object_set
     });
 
     std::array desc_set_layouts{
         info.scene_descriptor_set_layout,
-        instance_descriptor_set_layout.get()
+        instance_descriptor_set_layout_.get()
     };
 
-    pipeline_layout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
+    pipeline_layout_ = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
         {},
         static_cast<uint32_t>(desc_set_layouts.size()), desc_set_layouts.data(),
         /* push constant ranges */ 0, nullptr
@@ -205,7 +205,7 @@ vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
         &depth_stencil_info,
         &color_blend_state_create_info,
         nullptr,
-        pipeline_layout.get(),
+        pipeline_layout_.get(),
         info.render_pass,
         0,
         {},
@@ -232,14 +232,14 @@ void fill_grid_vbo(UniqueVmaBuffer& buffer, std::size_t grid_size)
 
 vk::Buffer GridSceneObjectType::acquire_vbo(std::size_t grid_size)
 {
-    auto it = buffers_for_sizes.find(grid_size);
+    auto it = buffers_for_sizes_.find(grid_size);
 
-    if (it == buffers_for_sizes.end())
+    if (it == buffers_for_sizes_.end())
     {
-        it = buffers_for_sizes.emplace(grid_size,
+        it = buffers_for_sizes_.emplace(grid_size,
             PerSizeData{
                 0,
-                resource_manager->create_vbo(sizeof(Vertex) * grid_size_to_vert_count(grid_size))
+                resource_manager_->create_vbo(sizeof(Vertex) * grid_size_to_vert_count(grid_size))
             }).first;
 
         fill_grid_vbo(it->second.buffer, grid_size);
@@ -251,11 +251,11 @@ vk::Buffer GridSceneObjectType::acquire_vbo(std::size_t grid_size)
 
 void GridSceneObjectType::release_vbo(std::size_t grid_size)
 {
-    auto it = buffers_for_sizes.find(grid_size);
+    auto it = buffers_for_sizes_.find(grid_size);
     --it->second.users;
 
     if (it->second.users == 0)
     {
-        buffers_for_sizes.erase(it);
+        buffers_for_sizes_.erase(it);
     }
 }

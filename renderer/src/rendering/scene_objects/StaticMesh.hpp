@@ -22,14 +22,14 @@ public:
 
 private:
     static constexpr std::size_t TEXTURE_MAP_COUNT = 2;
-    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps;
+    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps_;
 
-    class VMeshSceneObjectType* our_type{nullptr};
+    class VMeshSceneObjectType* our_type_{nullptr};
 
-    UniqueVmaBuffer vbo;
-    RingBuffer ubo;
+    UniqueVmaBuffer vbo_;
+    RingBuffer ubo_;
 
-    DescriptorSetRing descriptors;
+    DescriptorSetRing descriptors_;
 };
 
 class StaticMeshSceneObjectType : public SceneObjectType
@@ -44,8 +44,8 @@ private:
     void load_shaders();
 
 private:
-    std::vector<std::byte> vertex_shader;
-    std::vector<std::byte> fragment_shader;
+    std::vector<std::byte> vertex_shader_;
+    std::vector<std::byte> fragment_shader_;
 };
 
 MAKE_SCENE_OBJECT_TYPE_FACTORY(StaticMeshSceneObjectType);

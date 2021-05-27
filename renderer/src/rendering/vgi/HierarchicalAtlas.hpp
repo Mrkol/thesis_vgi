@@ -9,7 +9,7 @@
 #include <vulkan/vulkan.hpp>
 #include <Eigen/Dense>
 
-struct __attribute__((packed)) GeometryImageVertex
+struct GeometryImageVertex
 {
     Eigen::Vector3f position;
     Eigen::Vector2f uv;

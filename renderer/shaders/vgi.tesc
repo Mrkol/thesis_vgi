@@ -1,5 +1,6 @@
 #version 460
 
+
 // INPUTS
 
 layout(location = 0) in vec4 instance_side_mip[];

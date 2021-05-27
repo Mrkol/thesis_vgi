@@ -23,7 +23,7 @@ public:
 
     explicit Gui(CreateInfo info);
 
-    [[nodiscard]] vk::RenderPass get_render_pass() const { return render_pass.get(); };
+    [[nodiscard]] vk::RenderPass get_render_pass() const { return render_pass_.get(); };
 
     void tick(float delta_seconds);
 
@@ -31,7 +31,6 @@ public:
 
     void record_commands(vk::CommandBuffer cb, vk::Framebuffer framebuffer, vk::Rect2D area);
 private:
-    vk::UniqueDescriptorPool descriptor_pool;
-    vk::UniqueRenderPass render_pass;
-
+    vk::UniqueDescriptorPool descriptor_pool_;
+    vk::UniqueRenderPass render_pass_;
 };

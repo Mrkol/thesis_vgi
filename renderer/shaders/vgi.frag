@@ -1,5 +1,6 @@
 #version 460
 
+
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 uv;
@@ -54,7 +55,7 @@ void main()
         // Diffues
         + albedo * global_ubo.sun.diffuse.rgb * L
         // specular
-        + specular * global_ubo.sun.specular.rgb * pow(S, 5);
+        + specular * global_ubo.sun.specular.rgb * pow(S, 5) * 0.1;
 
     // Gamma correction
     frag_color = vec4(pow(color, vec3(1/2.2)), 1);

@@ -11,7 +11,7 @@
 
 static constexpr std::size_t CACHE_SIZE = 128;
 
-struct __attribute__((packed)) PerInstanceData
+struct PerInstanceData
 {
     Eigen::Vector4f side_mips;
     float mip;
@@ -20,9 +20,7 @@ struct __attribute__((packed)) PerInstanceData
     uint32_t patch_index;
 };
 
-static_assert(sizeof(PerInstanceData) == 8*sizeof(float) + sizeof(uint32_t));
-
-struct __attribute__((packed)) UBO
+struct UBO
 {
     Eigen::Matrix4f model;
     Eigen::Matrix4f normal;
@@ -32,13 +30,13 @@ struct __attribute__((packed)) UBO
 };
 
 VMesh::VMesh(const std::filesystem::path& folder)
-    : texture_maps{UniqueStbImage{folder / "albedo.jpg"}, UniqueStbImage{folder / "specular.jpg"}}
-    , atlas(folder / "resampled")
-    , current_cut(atlas.default_cut())
+    : texture_maps_{UniqueStbImage{folder / "albedo.jpg"}, UniqueStbImage{folder / "specular.jpg"}}
+    , atlas_(folder / "resampled")
+    , current_cut_(atlas_.default_cut())
 {
-    for (auto& map : texture_maps)
+    for (auto& map : texture_maps_)
     {
-        AD_HOC_ASSERT(map.width() == texture_maps[0].width() && map.height() == texture_maps[0].height(), "Oops");
+        AD_HOC_ASSERT(map.width() == texture_maps_[0].width() && map.height() == texture_maps_[0].height(), "Oops");
     }
 }
 
@@ -50,21 +48,21 @@ const SceneObjectTypeFactory& VMesh::get_scene_object_type_factory() const
 
 void VMesh::on_type_object_available(SceneObjectType& type)
 {
-    our_type = dynamic_cast<VMeshSceneObjectType*>(&type);
+    our_type_ = dynamic_cast<VMeshSceneObjectType*>(&type);
 
     auto irm = type.get_resource_manager();
 
-    vbo = irm->create_dynamic_vbo(sizeof(PerInstanceData)
-        * (1 << atlas.get_hierarchy_depth()) * atlas.get_patch_count());
+    vbo_ = irm->create_dynamic_vbo(sizeof(PerInstanceData)
+        * (1ull << atlas_.get_hierarchy_depth()) * atlas_.get_patch_count());
 
-    ubo = irm->create_ubo(sizeof(UBO));
-    descriptors = irm->create_descriptor_set_ring(type.get_instance_descriptor_set_layout());
-    descriptors.write_ubo(ubo, 0);
+    ubo_ = irm->create_ubo(sizeof(UBO));
+    descriptors_ = irm->create_descriptor_set_ring(type.get_instance_descriptor_set_layout());
+    descriptors_.write_ubo(ubo_, 0);
 
     std::vector<std::vector<const std::byte*>> gis;
-    for (std::size_t i = 0; i < atlas.get_patch_count(); ++i)
+    for (std::size_t i = 0; i < atlas_.get_patch_count(); ++i)
     {
-        auto& current = atlas.get_gis(i);
+        auto& current = atlas_.get_gis(i);
         gis.emplace_back();
 
         for (auto& gi : current)
@@ -73,44 +71,44 @@ void VMesh::on_type_object_available(SceneObjectType& type)
         }
     }
 
-    vgis = irm->create_svt(CACHE_SIZE, atlas.get_patch_count(),
-        vk::Format::eR32G32B32A32Sfloat, 2, atlas.get_min_mip(), std::move(gis));
+    vgis_ = irm->create_svt(CACHE_SIZE, atlas_.get_patch_count(),
+        vk::Format::eR32G32B32A32Sfloat, 2, atlas_.get_min_mip(), std::move(gis));
 
     vk::DescriptorImageInfo descriptor_image_info{
-        vgis.sampler(), vgis.view(), vk::ImageLayout::eShaderReadOnlyOptimal
+        vgis_.sampler(), vgis_.view(), vk::ImageLayout::eShaderReadOnlyOptimal
     };
 
-    descriptors.write_all(std::vector(descriptors.size(), vk::WriteDescriptorSet{
+    descriptors_.write_all(std::vector(descriptors_.size(), vk::WriteDescriptorSet{
         {}, 1, 0,
         1, vk::DescriptorType::eCombinedImageSampler,
         &descriptor_image_info, nullptr, nullptr
     }));
 
-    descriptors.write_sbo(vgis.get_indirection_table_sbo(), 2);
+    descriptors_.write_sbo(vgis_.get_indirection_table_sbo(), 2);
 
 
 
 
 
-    textures = irm->create_texture(
-        {static_cast<uint32_t>(texture_maps[0].width()), static_cast<uint32_t>(texture_maps[0].height())},
-        texture_maps.size());
+    textures_ = irm->create_texture(
+        {static_cast<uint32_t>(texture_maps_[0].width()), static_cast<uint32_t>(texture_maps_[0].height())},
+        texture_maps_.size());
 
 
     auto cb = irm->begin_single_time_commands();
 
-    textures.transfer_layout(cb.get(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+    textures_.transfer_layout(cb.get(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
         {}, vk::AccessFlagBits::eTransferWrite,
         vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
 
 
-    std::size_t staging_size = TEXTURE_MAP_COUNT * texture_maps[0].width() * texture_maps[0].height() * 4;
+    std::size_t staging_size = TEXTURE_MAP_COUNT * texture_maps_[0].width() * texture_maps_[0].height() * 4;
     auto staging = irm->create_staging_buffer(staging_size);
 
     auto mapped = staging.map();
 
     // TODO: make not fubar
-    for (auto& map : texture_maps)
+    for (auto& map : texture_maps_)
     {
         std::size_t size = map.width() * map.height() * 4;
         std::memcpy(mapped, map.data(), size);
@@ -125,30 +123,30 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     {
         copy_ops[i] =vk::BufferImageCopy{
             static_cast<uint32_t>(curr_offset),
-            static_cast<uint32_t>(texture_maps[i].width()), static_cast<uint32_t>(texture_maps[i].height()),
+            static_cast<uint32_t>(texture_maps_[i].width()), static_cast<uint32_t>(texture_maps_[i].height()),
             vk::ImageSubresourceLayers{
                 vk::ImageAspectFlagBits::eColor,
                 0, static_cast<uint32_t>(i), 1
             },
             vk::Offset3D{0, 0, 0},
             vk::Extent3D{
-                static_cast<uint32_t>(texture_maps[i].width()),
-                static_cast<uint32_t>(texture_maps[i].height()),
+                static_cast<uint32_t>(texture_maps_[i].width()),
+                static_cast<uint32_t>(texture_maps_[i].height()),
                 1
             }
         };
-        curr_offset += texture_maps[i].width() * texture_maps[i].height() * 4;
+        curr_offset += texture_maps_[i].width() * texture_maps_[i].height() * 4;
     }
 
-    cb->copyBufferToImage(staging.get(), textures.get(), vk::ImageLayout::eTransferDstOptimal, copy_ops);
+    cb->copyBufferToImage(staging.get(), textures_.get(), vk::ImageLayout::eTransferDstOptimal, copy_ops);
 
-    textures.transfer_layout(cb.get(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+    textures_.transfer_layout(cb.get(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
         vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
         vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader);
 
     irm->finish_single_time_commands(std::move(cb));
 
-    sampler = irm->get_device().createSamplerUnique(vk::SamplerCreateInfo{
+    sampler_ = irm->get_device().createSamplerUnique(vk::SamplerCreateInfo{
         {}, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerMipmapMode::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
@@ -157,8 +155,8 @@ void VMesh::on_type_object_available(SceneObjectType& type)
         0, false, 1, false, vk::CompareOp::eAlways, 0, 0, vk::BorderColor::eIntOpaqueBlack, false
     });
 
-    textures_view = irm->get_device().createImageViewUnique(vk::ImageViewCreateInfo{
-        {}, textures.get(), vk::ImageViewType::e2DArray, vk::Format::eR8G8B8A8Srgb,
+    textures_view_ = irm->get_device().createImageViewUnique(vk::ImageViewCreateInfo{
+        {}, textures_.get(), vk::ImageViewType::e2DArray, vk::Format::eR8G8B8A8Srgb,
         vk::ComponentMapping{},
         vk::ImageSubresourceRange{
             vk::ImageAspectFlagBits::eColor,
@@ -167,9 +165,9 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     });
 
     vk::DescriptorImageInfo info{
-        sampler.get(), textures_view.get(), vk::ImageLayout::eShaderReadOnlyOptimal
+        sampler_.get(), textures_view_.get(), vk::ImageLayout::eShaderReadOnlyOptimal
     };
-    descriptors.write_all(std::vector(descriptors.size(),
+    descriptors_.write_all(std::vector(descriptors_.size(),
         vk::WriteDescriptorSet{
             {}, 3, 0,
             1, vk::DescriptorType::eCombinedImageSampler, &info, nullptr, nullptr
@@ -192,16 +190,16 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
         model_mat,
         normal_mat,
         CACHE_SIZE,
-        static_cast<uint32_t>(atlas.get_min_mip()),
-        static_cast<uint32_t>(vgis.get_mip_level_count()),
+        static_cast<uint32_t>(atlas_.get_min_mip()),
+        static_cast<uint32_t>(vgis_.get_mip_level_count()),
     };
-    ubo.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
+    ubo_.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
 
 
     {
-        current_cut = atlas.default_cut();
+        current_cut_ = atlas_.default_cut();
 
-        auto nodes = current_cut.get_nodes();
+        auto nodes = current_cut_.get_nodes();
 
         static constexpr float TARGET_POLYGONS_PER_PIXEL = 1.f/64.f;
 
@@ -222,35 +220,35 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
                 {
                     return -std::numeric_limits<int64_t>::max();
                 }
-                int64_t saved = 1 << (2*wanted_mip(node));
+                int64_t saved = 1ull << (2*wanted_mip(node));
                 for (auto& child : node->children)
                 {
-                    saved -= 1 << (2*wanted_mip(child.get()));
+                    saved -= 1ull << (2*wanted_mip(child.get()));
                 }
                 return saved;
             };
 
-        uint64_t polygon_limit = vgis.cache_size_pixels();
+        uint64_t polygon_limit = vgis_.cache_size_pixels();
         uint64_t total_polygons = 0;
         std::multimap<int64_t, QuadtreeNode*, std::greater<>> queue;
         for (auto & node : nodes)
         {
             auto mip = wanted_mip(node);
-            current_cut.set_mip(node, mip);
+            current_cut_.set_mip(node, mip);
             queue.emplace(priority(node), node);
-            total_polygons += 1 << (2*mip);
+            total_polygons += 1ull << (2*mip);
         }
 
         const std::size_t node_limit = nodes.size() * 3;
 
-        while (current_cut.size() < node_limit
+        while (current_cut_.size() < node_limit
 //            && total_polygons > polygon_limit
             && !queue.empty() && queue.begin()->first > 0)
         {
             auto node = queue.begin()->second;
             total_polygons -= queue.begin()->first;
             queue.erase(queue.begin());
-            current_cut.split(node);
+            current_cut_.split(node);
             for (auto& child : node->children)
             {
                 if (child)
@@ -263,7 +261,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
 
 
-    auto nodes_to_render = current_cut.dump();
+    auto nodes_to_render = current_cut_.dump();
 
     // Keeps the order stable for easier debug
     // TODO: remove
@@ -306,10 +304,10 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
     for (auto&[node, data] : nodes_to_render)
     {
-        vgis.bump_region(
+        vgis_.bump_region(
             data.patch_idx,
             std::clamp(std::size_t(std::log2(float(1 << data.mip) / node->size)),
-                atlas.get_min_mip(), atlas.get_min_mip() + vgis.get_mip_level_count() - 1),
+                atlas_.get_min_mip(), atlas_.get_min_mip() + vgis_.get_mip_level_count() - 1),
             node->offset.x(),
             node->offset.y(),
             node->size
@@ -317,7 +315,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
     }
 
     {
-        auto pidata = reinterpret_cast<PerInstanceData*>(vbo.get_current().data());
+        auto pidata = reinterpret_cast<PerInstanceData*>(vbo_.get_current().data());
 
         auto mip_transform = [](std::size_t mip) { return static_cast<float>(1 << mip); };
 
@@ -333,32 +331,32 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
             pidata->param_space_offset.y() = node->offset.y();
             pidata->param_space_size = node->size;
 
-            pidata->patch_index = data.patch_idx;
+            pidata->patch_index = static_cast<uint32_t>(data.patch_idx);
 
             ++pidata;
         }
     }
 
-    vgis.tick();
+    vgis_.tick();
 }
 
 void VMesh::record_pre_commands(vk::CommandBuffer cb)
 {
-    vgis.record_commands(cb);
+    vgis_.record_commands(cb);
 }
 
 void VMesh::record_commands(vk::CommandBuffer cb)
 {
-    vk::DeviceSize offset{vbo.current_offset()};
-    auto buf = vbo.get();
+    vk::DeviceSize offset{vbo_.current_offset()};
+    auto buf = vbo_.get();
     cb.bindVertexBuffers(0, 1, &buf, &offset);
-    vbo.next();
+    vbo_.next();
 
-    std::array sets{descriptors.read_next()};
-    cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type->get_pipeline_layout(), 1,
+    std::array sets{descriptors_.read_next()};
+    cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type_->get_pipeline_layout(), 1,
         static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
 
-    cb.draw(4, current_cut.size(), 0, 0);
+    cb.draw(4, static_cast<uint32_t>(current_cut_.size()), 0, 0);
 }
 
 VMeshSceneObjectType::VMeshSceneObjectType(IResourceManager* irm)
@@ -369,21 +367,21 @@ VMeshSceneObjectType::VMeshSceneObjectType(IResourceManager* irm)
 
 vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::PipelineCreateInfo info)
 {
-    auto device = resource_manager->get_device();
+    auto device = resource_manager_->get_device();
     auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, vertex_shader.size(), reinterpret_cast<const uint32_t*>(vertex_shader.data())
+        {}, vertex_shader_.size(), reinterpret_cast<const uint32_t*>(vertex_shader_.data())
     });
 
     auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, fragment_shader.size(), reinterpret_cast<const uint32_t*>(fragment_shader.data())
+        {}, fragment_shader_.size(), reinterpret_cast<const uint32_t*>(fragment_shader_.data())
     });
 
     auto tess_ctrl_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, tess_ctrl_shader.size(), reinterpret_cast<const uint32_t*>(tess_ctrl_shader.data())
+        {}, tess_ctrl_shader_.size(), reinterpret_cast<const uint32_t*>(tess_ctrl_shader_.data())
     });
 
     auto tess_eval_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, tess_eval_shader.size(), reinterpret_cast<const uint32_t*>(tess_eval_shader.data())
+        {}, tess_eval_shader_.size(), reinterpret_cast<const uint32_t*>(tess_eval_shader_.data())
     });
 
     // TODO: proper viewmode system for wireframes and lighting toggles
@@ -514,16 +512,16 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         },
     };
 
-    instance_descriptor_set_layout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
+    instance_descriptor_set_layout_ = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo{
         {}, static_cast<uint32_t>(object_set_bindings.size()), object_set_bindings.data()
     });
 
     std::array desc_set_layouts{
         info.scene_descriptor_set_layout,
-        instance_descriptor_set_layout.get()
+        instance_descriptor_set_layout_.get()
     };
 
-    pipeline_layout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
+    pipeline_layout_ = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{
         {},
         static_cast<uint32_t>(desc_set_layouts.size()), desc_set_layouts.data(),
         /* push constant ranges */ 0, nullptr
@@ -540,7 +538,7 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         &depth_stencil_info,
         &color_blend_state_create_info,
         nullptr,
-        pipeline_layout.get(),
+        pipeline_layout_.get(),
         info.render_pass,
         0,
         {},
@@ -555,9 +553,9 @@ void VMeshSceneObjectType::reload_shaders()
 
 void VMeshSceneObjectType::load_shaders()
 {
-    vertex_shader = VkHelpers::read_shader("vgi.vert");
-    fragment_shader = VkHelpers::read_shader("vgi.frag");
-    tess_ctrl_shader = VkHelpers::read_shader("vgi.tesc");
-    tess_eval_shader = VkHelpers::read_shader("vgi.tese");
-    geom_shader = VkHelpers::read_shader("vgi.geom");
+    vertex_shader_ = VkHelpers::read_shader("vgi.vert");
+    fragment_shader_ = VkHelpers::read_shader("vgi.frag");
+    tess_ctrl_shader_ = VkHelpers::read_shader("vgi.tesc");
+    tess_eval_shader_ = VkHelpers::read_shader("vgi.tese");
+    geom_shader_ = VkHelpers::read_shader("vgi.geom");
 }

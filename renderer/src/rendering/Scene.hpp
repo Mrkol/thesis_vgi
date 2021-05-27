@@ -51,20 +51,20 @@ public:
     void record_pre_commands(vk::CommandBuffer cb);
     void record_commands(vk::CommandBuffer cb);
 
-    Camera* debug_get_camera() { return &camera; }
+    Camera* debug_get_camera() { return &camera_; }
 
 public:
     ViewMode view_mode = ViewMode::Normal;
 
 private:
-    IResourceManager* resource_manager;
+    IResourceManager* resource_manager_;
 
-    PipelineCreationInfo pipeline_creation_info;
+    PipelineCreationInfo pipeline_creation_info_;
 
-    vk::UniqueDescriptorSetLayout global_descriptor_set_layout;
+    vk::UniqueDescriptorSetLayout global_descriptor_set_layout_;
 
-    RingBuffer global_uniform_buffer;
-    DescriptorSetRing global_uniforms;
+    RingBuffer global_uniform_buffer_;
+    DescriptorSetRing global_uniforms_;
 
     struct PerTypeInfo
     {
@@ -73,10 +73,10 @@ private:
         std::vector<SceneObjectBase*> instances;
     };
 
-    std::unordered_map<std::string_view, PerTypeInfo> object_types;
-    std::vector<std::unique_ptr<SceneObjectBase>> scene_objects;
+    std::unordered_map<std::string_view, PerTypeInfo> object_types_;
+    std::vector<std::unique_ptr<SceneObjectBase>> scene_objects_;
 
-    Camera camera;
+    Camera camera_;
 
-    DirectionalLight sun{};
+    DirectionalLight sun_{};
 };

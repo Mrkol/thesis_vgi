@@ -177,6 +177,5 @@ ClusteringData outofcore_cluster(std::vector<ClusteringData> incore_results,
         }
     };
 
-//    return data;
     return cluster(std::move(data), std::move(config));
 }

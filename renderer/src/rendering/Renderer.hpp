@@ -35,9 +35,9 @@ public:
 
     void on_window_resized();
 
-    vk::Device get_device() override { return device.get(); };
+    vk::Device get_device() override { return device_.get(); };
 
-    Scene* debug_get_scene() { return scene.get(); }
+    Scene* debug_get_scene() { return scene_.get(); }
 
     // begin IResourceManager
 
@@ -77,22 +77,22 @@ private:
     constexpr static auto DEPTHBUFFER_FORMAT = vk::Format::eD32Sfloat;
 
 private:
-    fu2::unique_function<vk::Extent2D()> resolution_provider;
+    fu2::unique_function<vk::Extent2D()> resolution_provider_;
 
-    vk::Instance vulkan_instance;
-    vk::UniqueSurfaceKHR display_surface;
-    vk::PhysicalDevice physical_device;
+    vk::Instance vulkan_instance_;
+    vk::UniqueSurfaceKHR display_surface_;
+    vk::PhysicalDevice physical_device_;
 
-    QueueFamilyIndices queue_family_indices;
-    vk::UniqueDevice device;
-    vk::Queue graphics_queue;
-    vk::Queue present_queue;
+    QueueFamilyIndices queue_family_indices_;
+    vk::UniqueDevice device_;
+    vk::Queue graphics_queue_;
+    vk::Queue present_queue_;
 
-    VmaAllocator allocator{VK_NULL_HANDLE};
-    std::unique_ptr<void, void(*)(void*)> deferred_allocator_destroy{nullptr, nullptr};
+    VmaAllocator allocator_{nullptr};
+    std::unique_ptr<void, void(*)(void*)> deferred_allocator_destroy_{nullptr, nullptr};
 
-    vk::UniqueDescriptorPool global_descriptor_pool;
-    vk::UniqueCommandPool single_use_command_pool;
+    vk::UniqueDescriptorPool global_descriptor_pool_;
+    vk::UniqueCommandPool single_use_command_pool_;
 
     struct SwapchainData
     {
@@ -121,12 +121,12 @@ private:
         std::vector<PerElementData> elements;
     };
 
-    SwapchainData swapchain_data;
+    SwapchainData swapchain_data_;
 
-    std::unique_ptr<Scene> scene;
-    std::unique_ptr<Gui> gui;
+    std::unique_ptr<Scene> scene_;
+    std::unique_ptr<Gui> gui_;
 
-    std::size_t current_frame_idx{0};
+    std::size_t current_frame_idx_{0};
 
     struct PerInflightFrameData
     {
@@ -135,5 +135,5 @@ private:
         vk::UniqueFence in_flight_fence;
     };
 
-    std::array<PerInflightFrameData, MAX_FRAMES_IN_FLIGHT> per_inflight_frame_data;
+    std::array<PerInflightFrameData, MAX_FRAMES_IN_FLIGHT> per_inflight_frame_data_;
 };

@@ -79,22 +79,22 @@ vk::PresentModeKHR chose_present_mode(const vk::PhysicalDevice& device, const vk
 Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     std::span<const char* const> validation_layers,
     fu2::unique_function<vk::Extent2D()> res_provider)
-    : resolution_provider{std::move(res_provider)}
-    , vulkan_instance{instance}
-    , display_surface{std::move(surface)}
+    : resolution_provider_{std::move(res_provider)}
+    , vulkan_instance_{instance}
+    , display_surface_{std::move(surface)}
 {
     // TODO: Proper device selection
-    physical_device = vulkan_instance.enumeratePhysicalDevices().front();
+    physical_device_ = vulkan_instance_.enumeratePhysicalDevices().front();
 
-    queue_family_indices = chose_queue_families(physical_device, display_surface.get());    
+    queue_family_indices_ = chose_queue_families(physical_device_, display_surface_.get());    
 
     // kostyl due to bad API design
     float queue_priority = 1.0f;
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     {
         std::unordered_set<uint32_t> unique_families{
-            queue_family_indices.graphics_queue_idx,
-            queue_family_indices.presentation_queue_idx
+            queue_family_indices_.graphics_queue_idx,
+            queue_family_indices_.presentation_queue_idx
         };
 
         queue_create_infos.reserve(unique_families.size());
@@ -110,7 +110,7 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     features.tessellationShader = true;
 
     // NOTE: newer vulkan implementations ignore the layers here
-    device = physical_device.createDeviceUnique(vk::DeviceCreateInfo{
+    device_ = physical_device_.createDeviceUnique(vk::DeviceCreateInfo{
         {},
         static_cast<uint32_t>(queue_create_infos.size()), queue_create_infos.data(),
         static_cast<uint32_t>(validation_layers.size()), validation_layers.data(),
@@ -118,14 +118,14 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
         &features
     });
     
-    graphics_queue = device->getQueue(queue_family_indices.graphics_queue_idx, 0);
-    present_queue = device->getQueue(queue_family_indices.presentation_queue_idx, 0);
+    graphics_queue_ = device_->getQueue(queue_family_indices_.graphics_queue_idx, 0);
+    present_queue_ = device_->getQueue(queue_family_indices_.presentation_queue_idx, 0);
 
     {
         VmaAllocatorCreateInfo info{
             .flags = {},
-            .physicalDevice = physical_device,
-            .device = device.get(),
+            .physicalDevice = physical_device_,
+            .device = device_.get(),
 
             .preferredLargeHeapBlockSize = {},
             .pAllocationCallbacks = {},
@@ -138,10 +138,10 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
             .instance = instance,
             .vulkanApiVersion = VK_API_VERSION_1_2, // TODO: global constant for this
         };
-        vmaCreateAllocator(&info, &allocator);
+        vmaCreateAllocator(&info, &allocator_);
 
-        deferred_allocator_destroy =
-            decltype(deferred_allocator_destroy)(&allocator,
+        deferred_allocator_destroy_ =
+            decltype(deferred_allocator_destroy_)(&allocator_,
                 [](void* alloc)
                 {
                     vmaDestroyAllocator(*reinterpret_cast<VmaAllocator*>(alloc));
@@ -154,7 +154,7 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
         // TODO: This really confuses me...
         std::size_t max_objects = 100;
         // 2 sets: one global, one per-model
-        std::size_t max_sets = MAX_FRAMES_IN_FLIGHT * 2;
+        std::size_t max_sets = MAX_FRAMES_IN_FLIGHT * (max_objects + 1);
         std::array pool_sizes{
             vk::DescriptorPoolSize
                 {vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(max_objects * max_sets)},
@@ -163,52 +163,52 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
             vk::DescriptorPoolSize
                 {vk::DescriptorType::eStorageBuffer, static_cast<uint32_t>(max_objects * max_sets)}
         };
-        global_descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
+        global_descriptor_pool_ = device_->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
             {},
             /* max sets */ static_cast<uint32_t>(max_sets),
             /* pool sizes */ static_cast<uint32_t>(pool_sizes.size()), pool_sizes.data()
         });
     }
 
-    single_use_command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
-        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_family_indices.graphics_queue_idx
+    single_use_command_pool_ = device_->createCommandPoolUnique(vk::CommandPoolCreateInfo{
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_family_indices_.graphics_queue_idx
     });
 
-    scene = std::make_unique<Scene>(this, PipelineCreationInfo{
-        swapchain_data.render_pass.get(),
-        swapchain_data.extent
+    scene_ = std::make_unique<Scene>(this, PipelineCreationInfo{
+        swapchain_data_.render_pass.get(),
+        swapchain_data_.extent
     });
 
-    gui = std::make_unique<Gui>(Gui::CreateInfo{
-        instance, physical_device, device.get(), this,
-        queue_family_indices.graphics_queue_idx, graphics_queue,
-        swapchain_data.elements.size(), swapchain_data.format
+    gui_ = std::make_unique<Gui>(Gui::CreateInfo{
+        instance, physical_device_, device_.get(), this,
+        queue_family_indices_.graphics_queue_idx, graphics_queue_,
+        swapchain_data_.elements.size(), swapchain_data_.format
     });
 
     create_gui_framebuffers();
 
-    for (auto& data : per_inflight_frame_data)
+    for (auto& data : per_inflight_frame_data_)
     {
-        data.image_available_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
-        data.rendering_finished_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
-        data.in_flight_fence = device->createFenceUnique(vk::FenceCreateInfo{vk::FenceCreateFlagBits::eSignaled});
+        data.image_available_semaphore = device_->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
+        data.rendering_finished_semaphore = device_->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
+        data.in_flight_fence = device_->createFenceUnique(vk::FenceCreateInfo{vk::FenceCreateFlagBits::eSignaled});
     }
 }
 
 void Renderer::render(float delta_seconds)
 {
-    auto& data = per_inflight_frame_data[current_frame_idx];
+    auto& data = per_inflight_frame_data_[current_frame_idx_];
 
-    device->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
+    device_->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
 
-    gui->tick(delta_seconds);
+    gui_->tick(delta_seconds);
     // Scene::tick can show debug imgui thingies
-    scene->tick(delta_seconds);
-    gui->render();
+    scene_->tick(delta_seconds);
+    gui_->render();
 
     uint32_t idx;
     {
-        auto result = device->acquireNextImageKHR(swapchain_data.swapchain.get(),
+        auto result = device_->acquireNextImageKHR(swapchain_data_.swapchain.get(),
             std::numeric_limits<uint64_t>::max(), data.image_available_semaphore.get(), {}, &idx);
 
         if (result == vk::Result::eErrorOutOfDateKHR)
@@ -222,16 +222,16 @@ void Renderer::render(float delta_seconds)
         }
     }
 
-    auto& swapchain_element = swapchain_data.elements[idx];
+    auto& swapchain_element = swapchain_data_.elements[idx];
 
     if (swapchain_element.image_fence)
     {
-        device->waitForFences({swapchain_element.image_fence}, true, std::numeric_limits<uint64_t>::max());
+        device_->waitForFences({swapchain_element.image_fence}, true, std::numeric_limits<uint64_t>::max());
     }
 
     swapchain_element.image_fence = data.in_flight_fence.get();
 
-    device->resetCommandPool(swapchain_element.command_pool.get(), vk::CommandPoolResetFlagBits{});
+    device_->resetCommandPool(swapchain_element.command_pool.get(), vk::CommandPoolResetFlagBits{});
     record_commands(idx);
 
 
@@ -249,12 +249,12 @@ void Renderer::render(float delta_seconds)
         }
     };
 
-    device->resetFences({data.in_flight_fence.get()});
-    graphics_queue.submit(
+    device_->resetFences({data.in_flight_fence.get()});
+    graphics_queue_.submit(
         static_cast<uint32_t>(submits.size()), submits.data(), data.in_flight_fence.get());
 
     {
-        std::array swapchains{swapchain_data.swapchain.get()};
+        std::array swapchains{swapchain_data_.swapchain.get()};
 
         vk::PresentInfoKHR present_info{
             static_cast<uint32_t>(signal_semos.size()), signal_semos.data(),
@@ -262,10 +262,10 @@ void Renderer::render(float delta_seconds)
             &idx
         };
 
-        auto result = present_queue.presentKHR(&present_info);
+        auto result = present_queue_.presentKHR(&present_info);
 
         if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR
-            || swapchain_data.needs_recreation)
+            || swapchain_data_.needs_recreation)
         {
             create_swapchain();
         }
@@ -275,8 +275,8 @@ void Renderer::render(float delta_seconds)
         }
     }
 
-    ++current_frame_idx;
-    current_frame_idx %= MAX_FRAMES_IN_FLIGHT;
+    ++current_frame_idx_;
+    current_frame_idx_ %= MAX_FRAMES_IN_FLIGHT;
 }
 
 vk::Extent2D Renderer::chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities)
@@ -285,7 +285,7 @@ vk::Extent2D Renderer::chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capab
         return capabilities.currentExtent;
     }
 
-    VkExtent2D actualExtent = resolution_provider();
+    VkExtent2D actualExtent = resolution_provider_();
 
     actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
     actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
@@ -295,13 +295,13 @@ vk::Extent2D Renderer::chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capab
 
 void Renderer::create_swapchain()
 {
-    device->waitIdle();
+    device_->waitIdle();
 
-    swapchain_data = {};
+    swapchain_data_ = {};
 
-    auto surface_caps = physical_device.getSurfaceCapabilitiesKHR(display_surface.get());
-    auto format = chose_surface_format(physical_device, display_surface.get());
-    auto present_mode = chose_present_mode(physical_device, display_surface.get());
+    auto surface_caps = physical_device_.getSurfaceCapabilitiesKHR(display_surface_.get());
+    auto format = chose_surface_format(physical_device_, display_surface_.get());
+    auto present_mode = chose_present_mode(physical_device_, display_surface_.get());
     auto extent = chose_swap_extent(surface_caps);
 
     uint32_t image_count = surface_caps.minImageCount + 1;
@@ -312,16 +312,16 @@ void Renderer::create_swapchain()
     }
 
     bool queues_differ =
-        queue_family_indices.graphics_queue_idx != queue_family_indices.presentation_queue_idx;
+        queue_family_indices_.graphics_queue_idx != queue_family_indices_.presentation_queue_idx;
 
     std::vector<uint32_t> queue_families;
     if (queues_differ)
     {
-        queue_families = {queue_family_indices.graphics_queue_idx, queue_family_indices.presentation_queue_idx};
+        queue_families = {queue_family_indices_.graphics_queue_idx, queue_family_indices_.presentation_queue_idx};
     }
 
-    swapchain_data.swapchain = device->createSwapchainKHRUnique(vk::SwapchainCreateInfoKHR{
-        {}, display_surface.get(),
+    swapchain_data_.swapchain = device_->createSwapchainKHRUnique(vk::SwapchainCreateInfoKHR{
+        {}, display_surface_.get(),
         image_count, format.format, format.colorSpace,
         extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
         queues_differ ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
@@ -329,28 +329,28 @@ void Renderer::create_swapchain()
         surface_caps.currentTransform, vk::CompositeAlphaFlagBitsKHR::eOpaque,
         present_mode,
         /* clipped */ true,
-        /* old swapchain */ swapchain_data.swapchain.get()
+        /* old swapchain */ swapchain_data_.swapchain.get()
     });
 
-    swapchain_data.elements.clear();
+    swapchain_data_.elements.clear();
 
-    auto imgs = device->getSwapchainImagesKHR(swapchain_data.swapchain.get());
-    swapchain_data.elements.reserve(imgs.size());
+    auto imgs = device_->getSwapchainImagesKHR(swapchain_data_.swapchain.get());
+    swapchain_data_.elements.reserve(imgs.size());
     for (auto& img : imgs)
     {
-        swapchain_data.elements.emplace_back(SwapchainData::PerElementData{img});
+        swapchain_data_.elements.emplace_back(SwapchainData::PerElementData{img});
     }
 
-    swapchain_data.format = format.format;
-    swapchain_data.extent = extent;
+    swapchain_data_.format = format.format;
+    swapchain_data_.extent = extent;
 
 
 
-    swapchain_data.depthbuffer = UniqueVmaImage(allocator, DEPTHBUFFER_FORMAT, swapchain_data.extent, vk::ImageTiling::eOptimal,
+    swapchain_data_.depthbuffer = UniqueVmaImage(allocator_, DEPTHBUFFER_FORMAT, swapchain_data_.extent, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment, VMA_MEMORY_USAGE_GPU_ONLY);
 
-    swapchain_data.depthbuffer_view = device->createImageViewUnique(vk::ImageViewCreateInfo{
-        {}, swapchain_data.depthbuffer.get(), vk::ImageViewType::e2D, DEPTHBUFFER_FORMAT,
+    swapchain_data_.depthbuffer_view = device_->createImageViewUnique(vk::ImageViewCreateInfo{
+        {}, swapchain_data_.depthbuffer.get(), vk::ImageViewType::e2D, DEPTHBUFFER_FORMAT,
         vk::ComponentMapping{},
         vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}
     });
@@ -358,7 +358,7 @@ void Renderer::create_swapchain()
 
     std::array attachment_descriptions{
         vk::AttachmentDescription{
-            {}, swapchain_data.format, vk::SampleCountFlagBits::e1,
+            {}, swapchain_data_.format, vk::SampleCountFlagBits::e1,
             /* attachment ops */vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
             /* stencil ops */ vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
@@ -423,7 +423,7 @@ void Renderer::create_swapchain()
         }
     };
 
-    swapchain_data.render_pass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
+    swapchain_data_.render_pass = device_->createRenderPassUnique(vk::RenderPassCreateInfo{
         {},
         static_cast<uint32_t>(attachment_descriptions.size()), attachment_descriptions.data(),
         1, &subpass_description,
@@ -433,51 +433,51 @@ void Renderer::create_swapchain()
 
 
 
-    for (auto& el : swapchain_data.elements)
+    for (auto& el : swapchain_data_.elements)
     {
-        el.image_view = device->createImageViewUnique(vk::ImageViewCreateInfo{
+        el.image_view = device_->createImageViewUnique(vk::ImageViewCreateInfo{
             {}, el.image, vk::ImageViewType::e2D, format.format,
             vk::ComponentMapping{},
             vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
         });
 
-        std::array attachments{el.image_view.get(), swapchain_data.depthbuffer_view.get()};
+        std::array attachments{el.image_view.get(), swapchain_data_.depthbuffer_view.get()};
 
-        el.main_framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-            {}, swapchain_data.render_pass.get(),
+        el.main_framebuffer = device_->createFramebufferUnique(vk::FramebufferCreateInfo{
+            {}, swapchain_data_.render_pass.get(),
             static_cast<uint32_t>(attachments.size()), attachments.data(),
-            swapchain_data.extent.width, swapchain_data.extent.height,
+            swapchain_data_.extent.width, swapchain_data_.extent.height,
             /* layers */ 1u
         });
     }
 
 
-    for (auto& element : swapchain_data.elements)
+    for (auto& element : swapchain_data_.elements)
     {
         // as per https://developer.nvidia.com/blog/vulkan-dos-donts/
-        element.command_pool = device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
-            {}, queue_family_indices.graphics_queue_idx
+        element.command_pool = device_->createCommandPoolUnique(vk::CommandPoolCreateInfo{
+            {}, queue_family_indices_.graphics_queue_idx
         });
     }
 
-    for (auto& element : swapchain_data.elements)
+    for (auto& element : swapchain_data_.elements)
     {
         element.command_buffer =
-            std::move(device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
+            std::move(device_->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
                 element.command_pool.get(),
                 vk::CommandBufferLevel::ePrimary, 1
             }).front());
     }
 
-    if (scene != nullptr)
+    if (scene_ != nullptr)
     {
-        scene->recreate_pipelines(PipelineCreationInfo{
-            swapchain_data.render_pass.get(),
-            swapchain_data.extent
+        scene_->recreate_pipelines(PipelineCreationInfo{
+            swapchain_data_.render_pass.get(),
+            swapchain_data_.extent
         });
     }
 
-    if (gui != nullptr)
+    if (gui_ != nullptr)
     {
         create_gui_framebuffers();
     }
@@ -486,14 +486,14 @@ void Renderer::create_swapchain()
 void Renderer::create_gui_framebuffers()
 {
     // TODO: consider moving this to Gui.cpp
-    for (auto& el : swapchain_data.elements)
+    for (auto& el : swapchain_data_.elements)
     {
         std::array attachments{el.image_view.get()};
 
-        el.gui_framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-            {}, gui->get_render_pass(),
+        el.gui_framebuffer = device_->createFramebufferUnique(vk::FramebufferCreateInfo{
+            {}, gui_->get_render_pass(),
             static_cast<uint32_t>(attachments.size()), attachments.data(),
-            swapchain_data.extent.width, swapchain_data.extent.height,
+            swapchain_data_.extent.width, swapchain_data_.extent.height,
             /* layers */ 1u
         });
     }
@@ -501,46 +501,46 @@ void Renderer::create_gui_framebuffers()
 
 void Renderer::on_window_resized()
 {
-    swapchain_data.needs_recreation = true;
+    swapchain_data_.needs_recreation = true;
 }
 
 void Renderer::record_commands(std::size_t swapchain_idx)
 {
-    auto& swapchain_element = swapchain_data.elements[swapchain_idx];
+    auto& swapchain_element = swapchain_data_.elements[swapchain_idx];
     auto cb = swapchain_element.command_buffer.get();
 
     cb.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     {
-        scene->record_pre_commands(cb);
+        scene_->record_pre_commands(cb);
 
         std::array clear_colors{
             vk::ClearValue{vk::ClearColorValue{std::array{0.f, 0.f, 0.f, 1.f}}},
             vk::ClearValue{vk::ClearDepthStencilValue{1, 0}}
         };
 
-        vk::Rect2D area{{0, 0}, swapchain_data.extent};
+        vk::Rect2D area{{0, 0}, swapchain_data_.extent};
 
         cb.beginRenderPass(vk::RenderPassBeginInfo{
-            swapchain_data.render_pass.get(),
+            swapchain_data_.render_pass.get(),
             swapchain_element.main_framebuffer.get(),
             area,
             static_cast<uint32_t>(clear_colors.size()), clear_colors.data()
         }, vk::SubpassContents::eInline);
 
         {
-            scene->record_commands(cb);
+            scene_->record_commands(cb);
         }
 
         cb.endRenderPass();
 
-        gui->record_commands(cb, swapchain_element.gui_framebuffer.get(), area);
+        gui_->record_commands(cb, swapchain_element.gui_framebuffer.get(), area);
     }
     cb.end();
 }
 
 Renderer::~Renderer()
 {
-    device->waitIdle();
+    device_->waitIdle();
 
     ImGui_ImplVulkan_Shutdown();
 }
@@ -548,7 +548,7 @@ Renderer::~Renderer()
 RingBuffer Renderer::create_ubo(std::size_t size)
 {
     return RingBuffer({
-        allocator, MAX_FRAMES_IN_FLIGHT, size,
+        allocator_, MAX_FRAMES_IN_FLIGHT, size,
         vk::BufferUsageFlagBits::eUniformBuffer,
         VMA_MEMORY_USAGE_CPU_TO_GPU
     });
@@ -557,7 +557,7 @@ RingBuffer Renderer::create_ubo(std::size_t size)
 RingBuffer Renderer::create_sbo(std::size_t size)
 {
     return RingBuffer({
-        allocator, MAX_FRAMES_IN_FLIGHT, size,
+        allocator_, MAX_FRAMES_IN_FLIGHT, size,
         vk::BufferUsageFlagBits::eStorageBuffer,
         VMA_MEMORY_USAGE_CPU_TO_GPU
     });
@@ -566,26 +566,26 @@ RingBuffer Renderer::create_sbo(std::size_t size)
 DescriptorSetRing Renderer::create_descriptor_set_ring(vk::DescriptorSetLayout layout)
 {
     return DescriptorSetRing({
-        device.get(), global_descriptor_pool.get(), MAX_FRAMES_IN_FLIGHT, layout
+        device_.get(), global_descriptor_pool_.get(), MAX_FRAMES_IN_FLIGHT, layout
     });
 }
 
 vk::UniqueDescriptorSet Renderer::create_descriptor_set(vk::DescriptorSetLayout layout)
 {
-    return std::move(device->allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo{
-        global_descriptor_pool.get(), 1, &layout
+    return std::move(device_->allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo{
+        global_descriptor_pool_.get(), 1, &layout
     }).front());
 }
 
 UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
 {
-    return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    return UniqueVmaBuffer(allocator_, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 RingBuffer Renderer::create_dynamic_vbo(std::size_t size)
 {
     return RingBuffer({
-        allocator, MAX_FRAMES_IN_FLIGHT, size,
+        allocator_, MAX_FRAMES_IN_FLIGHT, size,
         vk::BufferUsageFlagBits::eVertexBuffer,
         VMA_MEMORY_USAGE_CPU_TO_GPU
     });
@@ -593,13 +593,13 @@ RingBuffer Renderer::create_dynamic_vbo(std::size_t size)
 
 UniqueVmaImage Renderer::create_texture(vk::Extent2D extent, std::size_t layers)
 {
-    return UniqueVmaImage(allocator, vk::Format::eR8G8B8A8Srgb, extent, vk::ImageTiling::eOptimal,
+    return UniqueVmaImage(allocator_, vk::Format::eR8G8B8A8Srgb, extent, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, VMA_MEMORY_USAGE_GPU_ONLY, layers);
 }
 
 UniqueVmaBuffer Renderer::create_staging_buffer(std::size_t size)
 {
-    return UniqueVmaBuffer(allocator, size, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    return UniqueVmaBuffer(allocator_, size, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 VirtualTextureSet
@@ -608,8 +608,8 @@ Renderer::create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_upda
 {
     auto cb = begin_single_time_commands();
     VirtualTextureSet result(VirtualTextureSet::CreateInfo{
-        device.get(),
-        allocator, cb.get(), MAX_FRAMES_IN_FLIGHT,
+        device_.get(),
+        allocator_, cb.get(), MAX_FRAMES_IN_FLIGHT,
         gpu_cache_side_size, per_frame_update_limit, format, format_multiplicity,
         min_mip, std::move(image_mip_data)
     });
@@ -620,8 +620,8 @@ Renderer::create_svt(std::size_t gpu_cache_side_size, std::size_t per_frame_upda
 
 vk::UniqueCommandBuffer Renderer::begin_single_time_commands()
 {
-    vk::UniqueCommandBuffer result = std::move(device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
-        single_use_command_pool.get(), vk::CommandBufferLevel::ePrimary, 1
+    vk::UniqueCommandBuffer result = std::move(device_->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
+        single_use_command_pool_.get(), vk::CommandBufferLevel::ePrimary, 1
     }).front());
 
     result->begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
@@ -633,20 +633,20 @@ void Renderer::finish_single_time_commands(vk::UniqueCommandBuffer cb)
 {
     cb->end();
 
-    graphics_queue.submit({vk::SubmitInfo{
+    graphics_queue_.submit({vk::SubmitInfo{
         /* wait semos */ 0, nullptr, nullptr,
         1, &cb.get()
     }}, nullptr);
     // TODO: actual fences
-    graphics_queue.waitIdle();
+    graphics_queue_.waitIdle();
 }
 
 void Renderer::hotswap_shaders()
 {
-    scene->reload_shaders();
-    device->waitIdle();
-    scene->recreate_pipelines(PipelineCreationInfo{
-        swapchain_data.render_pass.get(),
-        swapchain_data.extent
+    scene_->reload_shaders();
+    device_->waitIdle();
+    scene_->recreate_pipelines(PipelineCreationInfo{
+        swapchain_data_.render_pass.get(),
+        swapchain_data_.extent
     });
 }

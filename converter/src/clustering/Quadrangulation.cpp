@@ -139,7 +139,7 @@ std::size_t find_center(const SurfaceGraph& graph, const PolygonEdges& polygon_e
 }
 
 void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, DualSurfaceGraph& dual_graph,
-    size_t u_idx, size_t v_idx)
+                size_t u_idx, size_t v_idx)
 {
     // TODO: Optimize this crap
     auto u = graph.coords(u_idx);
@@ -157,98 +157,10 @@ void split_edge(std::vector<ThickTriangle>& patch, SurfaceGraph& graph, DualSurf
      *      b                             b
      */
 
-    // f, s
-    auto[first_idx, second_idx] = dual_graph.find({u, v});
-
-    if (first_idx == Patch::NONE)
-    {
-        throw std::logic_error("Trying to split an edge that does not belong to any triangle!");
-    }
-
-    auto get_third =
-        [](ThickTriangle& triangle, SymmetricEdge e) -> ThickVertex&
-        {
-            if (SymmetricEdge{to_hashable_coords(triangle.a), to_hashable_coords(triangle.b)} == e)
-            { return triangle.c; }
-            if (SymmetricEdge{to_hashable_coords(triangle.b), to_hashable_coords(triangle.c)} == e)
-            { return triangle.a; }
-            if (SymmetricEdge{to_hashable_coords(triangle.c), to_hashable_coords(triangle.a)} == e)
-            { return triangle.b; }
-            throw std::logic_error("Edge didn't come from this triangle!");
-        };
-
-    HashableCoords a = to_hashable_coords(get_third(patch[first_idx], {u, v}));
-    HashableCoords b{};
-    if (second_idx != Patch::NONE)
-    {
-        b = to_hashable_coords(get_third(patch[second_idx], {u, v}));
-    }
-
-
-    // Split actual geometric data
-    ThickVertex m_thick;
-    size_t first_prime_idx;
-    size_t second_prime_idx;
-    {
-        m_thick = midpoint(get_third(patch[first_idx], {a, v}), get_third(patch[first_idx], {a, u}));
-
-        // Duplicate first and shift u -> m
-        first_prime_idx = patch.size();
-        patch.push_back(patch[first_idx]);
-        get_third(patch.back(), {a, v}) = m_thick;
-
-        if (second_idx != Patch::NONE)
-        {
-            // Duplicate second and shift v -> m
-            second_prime_idx = patch.size();
-            patch.push_back(patch[second_idx]);
-            get_third(patch.back(), {b, u}) = m_thick;
-        }
-
-        // For first, shift v -> m
-        get_third(patch[first_idx], {a, u}) = m_thick;
-
-        if (second_idx != Patch::NONE)
-        {
-            // for second, shift u -> m
-            get_third(patch[second_idx], {b, v}) = m_thick;
-        }
-    }
-
-    auto m = to_hashable_coords(m_thick);
-
-    // Split hash table data
-    // Don't try to read this. Look at the picture above.
-    {
-        dual_graph.remove_triangle(a, u, v);
-        if (second_idx != Patch::NONE)
-        {
-            dual_graph.remove_triangle(u, v, b);
-        }
-
-        dual_graph.add({a, v}, first_prime_idx);
-        if (second_idx != Patch::NONE)
-        {
-            dual_graph.add({v, b}, second_idx);
-            dual_graph.add({b, u}, second_prime_idx);
-        }
-        dual_graph.add({u, a}, first_idx);
-
-        dual_graph.add({a, m}, first_idx);
-        dual_graph.add({a, m}, first_prime_idx);
-        dual_graph.add({v, m}, first_prime_idx);
-        if (second_idx != Patch::NONE)
-        {
-            dual_graph.add({v, m}, second_idx);
-            dual_graph.add({b, m}, second_idx);
-            dual_graph.add({b, m}, second_prime_idx);
-            dual_graph.add({u, m}, second_prime_idx);
-        }
-        dual_graph.add({u, m}, first_idx);
-    }
+    auto[a, m, b] = dual_graph.split_edge(patch, u, v);
 
     // Split graph
-    graph.split_edge(u, v, a, second_idx != Patch::NONE ? std::make_optional(b) : std::nullopt, m);
+    graph.split_edge(u, v, a, b, m);
 }
 
 std::vector<std::vector<std::size_t>> build_midpoint_paths(

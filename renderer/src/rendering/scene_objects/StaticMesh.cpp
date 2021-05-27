@@ -26,7 +26,7 @@ const SceneObjectTypeFactory& StaticMesh::get_scene_object_type_factory() const
     return factory;
 }
 
-StaticMeshSceneObjectType::StaticMeshSceneObjectType(struct IResourceManager* irm) : SceneObjectType(irm)
+StaticMeshSceneObjectType::StaticMeshSceneObjectType(class IResourceManager* irm) : SceneObjectType(irm)
 {
 
 }

@@ -27,21 +27,21 @@ public:
 
 private:
     static constexpr std::size_t TEXTURE_MAP_COUNT = 2;
-    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps;
+    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps_;
 
     // TODO: Move the atlas to the type object
-    HierarchicalAtlas atlas;
-    HierarchyCut current_cut;
-    class VMeshSceneObjectType* our_type{nullptr};
+    HierarchicalAtlas atlas_;
+    HierarchyCut current_cut_;
+    class VMeshSceneObjectType* our_type_{nullptr};
 
-    RingBuffer vbo;
-    RingBuffer ubo;
-    VirtualTextureSet vgis;
-    UniqueVmaImage textures;
-    vk::UniqueImageView textures_view;
-    vk::UniqueSampler sampler;
+    RingBuffer vbo_;
+    RingBuffer ubo_;
+    VirtualTextureSet vgis_;
+    UniqueVmaImage textures_;
+    vk::UniqueImageView textures_view_;
+    vk::UniqueSampler sampler_;
 
-    DescriptorSetRing descriptors;
+    DescriptorSetRing descriptors_;
 };
 
 class VMeshSceneObjectType : public SceneObjectType
@@ -56,11 +56,11 @@ private:
     void load_shaders();
 
 private:
-    std::vector<std::byte> vertex_shader;
-    std::vector<std::byte> fragment_shader;
-    std::vector<std::byte> tess_ctrl_shader;
-    std::vector<std::byte> tess_eval_shader;
-    std::vector<std::byte> geom_shader;
+    std::vector<std::byte> vertex_shader_;
+    std::vector<std::byte> fragment_shader_;
+    std::vector<std::byte> tess_ctrl_shader_;
+    std::vector<std::byte> tess_eval_shader_;
+    std::vector<std::byte> geom_shader_;
 };
 
 MAKE_SCENE_OBJECT_TYPE_FACTORY(VMeshSceneObjectType);
