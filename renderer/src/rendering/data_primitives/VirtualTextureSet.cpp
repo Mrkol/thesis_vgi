@@ -46,11 +46,11 @@ VirtualTextureSet::VirtualTextureSet(VirtualTextureSet::CreateInfo info)
     cache_lifetimes.resize(cache_side_size*cache_side_size, 0);
     cache_state.resize(cache_lifetimes.size());
 
-
+    // Trick: we chain this barrier with the one in record_commands
     cache.transfer_layout(info.single_time_cb,
         vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal,
-        {}, vk::AccessFlagBits::eTransferWrite,
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
+        {}, {},
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTessellationEvaluationShader);
 
     for (std::size_t i = 0; i < image_mip_data.size(); ++i)
     {
@@ -197,7 +197,7 @@ void VirtualTextureSet::record_commands(vk::CommandBuffer cb)
         cache.transfer_layout(cb,
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal,
             {}, vk::AccessFlagBits::eTransferWrite,
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
+            vk::PipelineStageFlagBits::eTessellationEvaluationShader, vk::PipelineStageFlagBits::eTransfer);
 
         cb.copyBufferToImage(staging_buffer.get(), cache.get(), vk::ImageLayout::eTransferDstOptimal,
             static_cast<uint32_t>(staging_targets.size()), staging_targets.data());

@@ -395,31 +395,11 @@ void Renderer::create_swapchain()
             /* src */ VK_SUBPASS_EXTERNAL,
             /* dst */ 0,
             /* src stages */
-                      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
             /* dst stages */
-                      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
             /* src access */ {},
             /* dst access */ vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite
-        },
-        vk::SubpassDependency{
-            /* src */ VK_SUBPASS_EXTERNAL,
-            /* dst */ 0,
-            /* src stages */
-            vk::PipelineStageFlagBits::eTransfer,
-            /* dst stages */
-            vk::PipelineStageFlagBits::eTessellationEvaluationShader,
-            /* src access */ vk::AccessFlagBits::eTransferWrite,
-            /* dst access */ vk::AccessFlagBits::eShaderRead
-        },
-        vk::SubpassDependency{
-            /* src */ 0,
-            /* dst */ VK_SUBPASS_EXTERNAL,
-            /* src stages */
-            vk::PipelineStageFlagBits::eTessellationEvaluationShader,
-            /* dst stages */
-            vk::PipelineStageFlagBits::eTransfer,
-            /* src access */ vk::AccessFlagBits::eShaderRead,
-            /* dst access */ vk::AccessFlagBits::eTransferWrite
         }
     };
 

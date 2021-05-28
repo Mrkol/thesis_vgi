@@ -20,7 +20,7 @@ struct QueueFamilyIndices
 };
 
 class Renderer : public IResourceManager {
-    static constexpr std::size_t MAX_FRAMES_IN_FLIGHT = 1;
+    static constexpr std::size_t MAX_FRAMES_IN_FLIGHT = 2;
 public:
     /**
      * All extension and validation layer management is located inside of Application.cpp for simplicity's sake
