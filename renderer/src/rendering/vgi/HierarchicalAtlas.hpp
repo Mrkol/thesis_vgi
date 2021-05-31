@@ -34,12 +34,15 @@ public:
     void split(NodeHandle node);
     void set_mip(NodeHandle node, std::size_t mip);
 
+    void recalculate_side_mips();
+
 private:
     std::vector<NodeHandle> find_side_neighbors(const NodeHandle node, std::size_t side);
     void recalculate_side_mips(NodeHandle node, std::size_t node_side, std::size_t neighbor_side);
 
 private:
     std::unordered_map<NodeHandle, CutElement> elements;
+    bool side_mips_dirty{false};
 };
 
 class HierarchicalAtlas

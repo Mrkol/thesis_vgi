@@ -284,48 +284,78 @@ void HierarchyCut::set_mip(NodeHandle node, std::size_t mip)
     }
 
     data.mip = mip;
+    side_mips_dirty = true;
+}
 
-    for (std::size_t i = 0; i < 4; ++i)
+void HierarchyCut::recalculate_side_mips()
+{
+    if (!side_mips_dirty)
     {
-        auto neighbors = find_side_neighbors(node, i);
+        return;
+    }
 
-        if (neighbors.empty())
+    side_mips_dirty = false;
+
+    constexpr static std::size_t NO_MIP = std::numeric_limits<std::size_t>::max();
+
+    for (auto&[node, data] : elements)
+    {
+        for (std::size_t i = 0; i < 4; ++i)
         {
-            elements.at(node).side_mip[i] = mip;
-            continue;
+            data.side_mip[i] = NO_MIP;
         }
+    }
 
-        NodeHandle lengthiest = node;
-        for (auto neighbor : neighbors)
+    for (auto&[node, data] : elements)
+    {
+        for (std::size_t i = 0; i < 4; ++i)
         {
-            if (neighbor->size > lengthiest->size)
+            if (data.side_mip[i] != NO_MIP)
             {
-                lengthiest = neighbor;
+                continue;
             }
-        }
 
-        std::size_t node_side = i + 4;
-        std::size_t neighbor_side = i + 6;
+            auto neighbors = find_side_neighbors(node, i);
 
-        if (lengthiest != node)
-        {
-            std::swap(node_side, neighbor_side);
-            if (node.patch().neighbors[i] == &lengthiest.patch())
+            if (neighbors.empty())
             {
-                node_side += node.patch().neighbor_rotation_difference[i];
+                elements.at(node).side_mip[i] = data.mip;
+                continue;
             }
-        }
-        else
-        {
-            if (node.patch().neighbors[i] == &neighbors[0].patch())
-            {
-                neighbor_side -= node.patch().neighbor_rotation_difference[i];
-            }
-        }
 
-        recalculate_side_mips(lengthiest, node_side % 4, neighbor_side % 4);
+            NodeHandle lengthiest = node;
+            for (auto neighbor : neighbors)
+            {
+                if (neighbor->size > lengthiest->size)
+                {
+                    lengthiest = neighbor;
+                }
+            }
+
+            std::size_t node_side = i + 4;
+            std::size_t neighbor_side = i + 6;
+
+            if (lengthiest != node)
+            {
+                std::swap(node_side, neighbor_side);
+                if (node.patch().neighbors[i] == &lengthiest.patch())
+                {
+                    node_side -= node.patch().neighbor_rotation_difference[i];
+                }
+            }
+            else
+            {
+                if (node.patch().neighbors[i] == &neighbors[0].patch())
+                {
+                    neighbor_side -= node.patch().neighbor_rotation_difference[i];
+                }
+            }
+
+            recalculate_side_mips(lengthiest, node_side % 4, neighbor_side % 4);
+        }
     }
 }
+
 
 void HierarchyCut::recalculate_side_mips(NodeHandle node, std::size_t node_side, std::size_t neighbor_side)
 {

@@ -46,6 +46,11 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         add_object(std::move(grid));
     }
 
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/sphere");
+//        add_object(std::move(vmesh));
+//    }
+
     {
         auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
         vmesh->scale.setConstant(0.01f);
@@ -53,7 +58,7 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
         add_object(std::move(vmesh));
     }
-//
+
 //    {
 //        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
 //        vmesh->scale.setConstant(0.01f);
@@ -62,22 +67,22 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
 //        add_object(std::move(vmesh));
 //    }
-//
-//    {
-//        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");
-//        vmesh->scale.setConstant(0.01f);
-//        vmesh->position << -10, 0, 0;
-//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-//        add_object(std::move(vmesh));
-//    }
 
     {
-        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
-        vmesh->scale.setConstant(0.02f);
-        vmesh->position << 10, 0, 0;
-        vmesh->rotation = Eigen::AngleAxisf(static_cast<float>(-EIGEN_PI/2), Eigen::Vector3f::UnitX());
+        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << -10, 0, 0;
+        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
         add_object(std::move(vmesh));
     }
+
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
+//        vmesh->scale.setConstant(0.02f);
+//        vmesh->position << 10, 0, 0;
+//        vmesh->rotation = Eigen::AngleAxisf(static_cast<float>(-EIGEN_PI/2), Eigen::Vector3f::UnitX());
+//        add_object(std::move(vmesh));
+//    }
 
 
     sun_.direction << -1, 0, 1, 0;

@@ -261,6 +261,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
         }
     }
 
+    current_cut_.recalculate_side_mips();
 
 
     auto nodes_to_render = current_cut_.dump();
