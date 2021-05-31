@@ -83,7 +83,7 @@ std::vector<ThickTriangle> fixup_border(std::vector<ThickTriangle> triangles)
 
             if (s != NONE && colors[i] == colors[j])
             {
-                edges_to_split.emplace(i, j);
+                edges_to_split.emplace(SymmetricPair<std::size_t>{i, j});
             }
         }
     }
