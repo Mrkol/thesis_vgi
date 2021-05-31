@@ -144,3 +144,55 @@ abstract = "In this paper we present a new continuous multiresolution approach w
 	url = {https://quixel.com/megascans},
 	urldate = {2021-05-27}
 }
+
+@article{normalmapping,
+author = {Blinn, James F.},
+title = {Simulation of Wrinkled Surfaces},
+year = {1978},
+issue_date = {August 1978},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {12},
+number = {3},
+issn = {0097-8930},
+url = {https://doi.org/10.1145/965139.507101},
+doi = {10.1145/965139.507101},
+abstract = {Computer generated shaded images have reached an impressive degree of realism with the current state of the art. They are not so realistic, however, that they would fool many people into believing they are real. One problem is that the surfaces tend to look artificial due to their extreme smoothness. What is needed is a means of simulating the surface irregularities that are on real surfaces. In 1973 Ed Catmull introduced the idea of using the parameter values of parametrically defined surfaces to index into a texture definition function which scales the intensity of the reflected light. By tying the texture pattern to the parameter values, the texture is guaranteed to rotate and move with the object. This is good for showing patterns painted on the surface, but attempts to simulate rough surfaces in this way are unconvincing. This paper presents a method of using a texturing function to perform a small perturbation on the direction of the surface normal before using it in the intensity calculations. This process yields images with realistic looking surface wrinkles without the need to model each wrinkle as a separate surface element. Several samples of images made with this technique are included.},
+journal = {SIGGRAPH Comput. Graph.},
+month = aug,
+pages = {286–292},
+numpages = {7}
+}
+
+@inproceedings{reliefmapping,
+author = {Policarpo, F\'{a}bio and Oliveira, Manuel M. and Comba, Jo\~{a}o L. D.},
+title = {Real-Time Relief Mapping on Arbitrary Polygonal Surfaces},
+year = {2005},
+isbn = {1595930132},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/1053427.1053453},
+doi = {10.1145/1053427.1053453},
+abstract = {This paper presents a technique for mapping relief textures onto arbitrary polygonal models in real time. In this approach, the mapping of the relief data is done in tangent space. As a result, it can be applied to polygonal representations of curved surfaces producing correct self-occlusions, interpenetrations, shadows and per-pixel lighting effects. The approach can be used to consistently add surface details to geometric models undergoing deformations, such as in the case of animated characters commonly found in games. The technique uses an inverse formulation (i.e., pixel driven) based on an efficient ray-height-field intersection algorithm implemented on the GPU. It supports extreme close-up views of the surfaces, mip mapping and anisotropic texture filtering. Also, contrary to high-dimensional representations of surface details, the low memory requirements of the proposed technique do not restrict its use to tiled textures.},
+booktitle = {Proceedings of the 2005 Symposium on Interactive 3D Graphics and Games},
+pages = {155–162},
+numpages = {8},
+keywords = {motion parallax, relief mapping, real-time rendering, surface details, image-based rendering},
+location = {Washington, District of Columbia},
+series = {I3D '05}
+}
+
+@article{displacementmapping,
+author = {Szirmay-Kalos, László and Umenhoffer, Tamás},
+title = {Displacement Mapping on the GPU — State of the Art},
+journal = {Computer Graphics Forum},
+volume = {27},
+number = {6},
+pages = {1567-1592},
+keywords = {Displacement Mapping, Tangent space, Direct3D 9 and 10, HLSL, Silhoucttes, Self shadowing, GPU, 1.3.7 Three-Dimensional Graphics and Realism},
+doi = {https://doi.org/10.1111/j.1467-8659.2007.01108.x},
+url = {https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-8659.2007.01108.x},
+eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1467-8659.2007.01108.x},
+abstract = {Abstract This paper reviews the latest developments of displacement mapping algorithms implemented on the vertex, geometry, and fragment shaders of graphics cards. Displacement mapping algorithms are classified as per-vertex and per-pixel methods. Per-pixel approaches are further categorized as safe algorithms that aim at correct solutions in all cases, to unsafe techniques that may fail in extreme cases but are usually much faster than safe algorithms, and to combined methods that exploit the robustness of safe and the speed of unsafe techniques. We discuss the possible roles of vertex, geometry and fragment shaders to implement these algorithms. Then the particular GPU-based bump, parallax, relief, sphere, horizon mapping, cone stepping, local ray tracing, pyramidal and view-dependent displacement mapping methods, as well as their numerous variations are reviewed providing also implementation details of the shader programs. We present these methods using uniform notations and also point out when different authors called similar concepts differently. In addition to basic displacement mapping, self-shadowing and silhouette processing are also reviewed. Based on our experiences gained having reimplemented these methods, their performance and quality are compared, and the advantages and disadvantages are fairly presented.},
+year = {2008}
+}
