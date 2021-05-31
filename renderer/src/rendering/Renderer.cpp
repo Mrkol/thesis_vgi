@@ -108,6 +108,7 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     vk::PhysicalDeviceFeatures features;
 
     features.tessellationShader = true;
+    features.geometryShader = true;
 
     // NOTE: newer vulkan implementations ignore the layers here
     device_ = physical_device_.createDeviceUnique(vk::DeviceCreateInfo{

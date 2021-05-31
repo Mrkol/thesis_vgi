@@ -47,7 +47,7 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
     }
 
     {
-        auto vmesh = std::make_unique<VMesh>("../../../models/rock_sandstone");
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
         vmesh->scale.setConstant(0.01f);
         vmesh->position << 0, 0, -5;
         vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
@@ -72,7 +72,7 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //    }
 
     {
-        auto vmesh = std::make_unique<VMesh>("../../../models/rock_cliffs");
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
         vmesh->scale.setConstant(0.02f);
         vmesh->position << 10, 0, 0;
         vmesh->rotation = Eigen::AngleAxisf(static_cast<float>(-EIGEN_PI/2), Eigen::Vector3f::UnitX());

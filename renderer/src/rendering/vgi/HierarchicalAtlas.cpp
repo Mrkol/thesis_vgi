@@ -4,213 +4,57 @@
 #include <fstream>
 #include <utility>
 #include <deque>
-#include <imgui.h>
 
 #include "Utility.hpp"
+#include "AtlasPatch.hpp"
 
 
-GeometryImage::GeometryImage(const std::filesystem::path& path)
+
+NodeHandle find_side_neighbor_search_start(NodeHandle node, std::size_t side)
 {
-    std::ifstream in{path, std::ios_base::binary};
+    std::array bad_child_indices{
+        std::make_pair(0, 1), // side 0
+        std::make_pair(1, 3), // side 1
+        std::make_pair(2, 3), // side 2
+        std::make_pair(0, 2), // side 3
+    };
 
-    data.resize(file_size(path) / sizeof(data[0]));
-    in.read(reinterpret_cast<char*>(data.data()),
-        static_cast<std::streamsize>(data.size() * sizeof(data[0])));
-
-    width = static_cast<std::size_t>(std::sqrt(data.size()));
-}
-
-Eigen::Vector3f& GeometryImage::operator ()(std::size_t x, std::size_t y)
-{
-    AD_HOC_ASSERT(x < width && y < width, "out of bounds");
-    return data[y*width + x].position;
-}
-
-const Eigen::Vector3f& GeometryImage::operator ()(std::size_t x, std::size_t y) const
-{
-    return const_cast<GeometryImage&>(*this).operator ()(x, y);
-}
-
-GeometryImage GeometryImage::upscale(std::size_t newsize) const
-{
-    GeometryImage result;
-
-    result.data.resize(newsize * newsize);
-    result.width = newsize;
-
-    static constexpr auto lerp = []<class T>(T c1, T c2, float k)
-        {
-            return (1 - k)*c1 + k*c2;
-        };
-    static constexpr auto blerp = []<class T>(T c11, T c21, T c12, T c22, float kx, float ky)
-        {
-            return lerp(lerp(c11, c21, kx), lerp(c12, c22, kx), ky);
-        };
-
-
-    for (std::size_t x = 0; x < newsize; ++x)
+    while (node.has_parent()
+        && (node.parent().child(bad_child_indices[side].first) == node
+            || node.parent().child(bad_child_indices[side].second) == node))
     {
-        for (std::size_t y = 0; y < newsize; ++y)
+        node = node.parent();
+    }
+
+    if (!node.has_parent())
+    {
+        if (auto neighbor_patch = node.patch().neighbors[side])
         {
-            float x_ = float(x * width) / float(newsize);
-            float y_ = float(y * width) / float(newsize);
+            return NodeHandle::root_of(neighbor_patch);
+        }
 
-            auto xi = std::size_t(x_);
-            auto yi = std::size_t(y_);
+        return {};
+    }
 
-            result(x, y) =
-                blerp
-                ( operator ()(xi,     yi)
-                , operator ()(xi + 1, yi)
-                , operator ()(xi,     yi + 1)
-                , operator ()(xi + 1, yi + 1)
-                , x_ - float(xi)
-                , y_ - float(yi)
-                );
+    std::array lookup{
+        std::array{-1, -1,  0,  1},
+        std::array{ 1, -1,  3, -1},
+        std::array{ 2,  3, -1, -1},
+        std::array{-1,  0, -1,  2}
+    };
+
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        if (node.parent().child(i) == node)
+        {
+            return node.parent().child(lookup[side][i]);
         }
     }
 
-    return result;
+    AD_HOC_PANIC("Something went very wrong");
 }
 
-QuadtreeNode::QuadtreeNode(QuadtreeNode::CreateInfo info)
-    : children{nullptr}
-    , size{info.size}
-    , offset{info.offset}
-    , bounding_box_start{Eigen::Vector3f::Constant(std::numeric_limits<float>::max())}
-    , bounding_box_end{Eigen::Vector3f::Constant(-std::numeric_limits<float>::max())}
-    , min_tessellation{info.levels_left}
-    , max_tessellation{info.levels_left + info.GIs.size() - 1}
-    , mip_errors(info.GIs.size(), 0)
-{
-    if (info.levels_left > 0)
-    {
-        float size_ = size/2;
-        std::array offsets{
-            Eigen::Vector2f{0, 0},
-            Eigen::Vector2f{size_, 0},
-            Eigen::Vector2f{0, size_},
-            Eigen::Vector2f{size_, size_},
-        };
-
-        for (std::size_t i = 0; i < 4; ++i)
-        {
-            children[i] = std::make_unique<QuadtreeNode>(CreateInfo{
-                info.levels_left - 1,
-                size_,
-                offset + offsets[i],
-                info.GIs,
-                info.upsampled_GIs
-            });
-            children[i]->parent = this;
-
-            for (std::size_t j = 0; j < mip_errors.size(); ++j)
-            {
-                mip_errors[j] = std::max(mip_errors[j], children[i]->mip_errors[j]);
-            }
-            bounding_box_start = bounding_box_start.cwiseMin(children[i]->bounding_box_start);
-            bounding_box_end = bounding_box_end.cwiseMax(children[i]->bounding_box_end);
-        }
-
-    }
-    else
-    {
-        using IntVec = Eigen::Matrix<std::size_t, 2, 1>;
-
-        for (std::size_t i = 1; i < info.GIs.size(); ++i)
-        {
-            auto& gi = info.upsampled_GIs[i - 1];
-            auto& original_gi = info.GIs[0];
-
-            auto subregion_size = std::size_t(float(original_gi.size()) * size);
-            auto subregion_offset = (float(original_gi.size()) * offset).cast<std::size_t>().eval();
-
-            float& error = mip_errors[i];
-            for (std::size_t x = 0; x < subregion_size; ++x)
-            {
-                for (std::size_t y = 0; y < subregion_size; ++y)
-                {
-                    auto p = gi(subregion_offset.x() + x, subregion_offset.y() + y);
-                    auto po = original_gi(subregion_offset.x() + x, subregion_offset.y() + y);
-                    error = std::max(error, (p - po).norm());
-
-                    bounding_box_start = bounding_box_start.cwiseMin(po);
-                    bounding_box_end = bounding_box_end.cwiseMax(po);
-                }
-            }
-        }
-    }
-}
-
-float QuadtreeNode::projected_screenspace_area(
-    Eigen::Matrix4f model, Eigen::Matrix4f view, Eigen::Matrix4f projection) const
-{
-    using namespace Eigen;
-    Vector3f d = bounding_box_end - bounding_box_start;
-
-    Vector4f o = view * model * bounding_box_start.homogeneous();
-    Vector4f dx = view * model * Vector4f(d.x(), 0, 0, 0);
-    Vector4f dy = view * model * Vector4f(0, d.y(), 0, 0);
-    Vector4f dz = view * model * Vector4f(0, 0, d.z(), 0);
-
-    Vector2f min{std::numeric_limits<float>::max(), std::numeric_limits<float>::max()};
-    Vector2f max = -min;
-    for (std::size_t i = 0; i < 8; ++i)
-    {
-        Vector4f p = projection * (o + dx*!!(i & 1) + dy*!!(i & 2) + dz*!!(i & 4));
-        Vector2f s{p.x() / p.w(), p.y() / p.w()};
-        min = min.cwiseMin(s);
-        max = max.cwiseMax(s);
-    }
-
-    if ((max.array() < -1).any() || (min.array() > 1).any())
-    {
-        return 0;
-    }
-
-    max = max.cwiseMin(Vector2f{1, 1});
-    min = min.cwiseMax(Vector2f{-1, -1});
-
-    return std::abs((max - min).prod())/4;
-}
-
-AtlasPatch::AtlasPatch(CreateInfo info)
-{
-    gis.reserve(info.max_mip - info.min_mip + 1);
-    for (std::size_t i = info.min_mip; i <= info.max_mip; ++i)
-    {
-        gis.emplace_back(
-            info.images_folder / (std::string{info.name_prefix} + "," + std::to_string(i))
-        );
-    }
-
-    std::vector<GeometryImage> upsampled;
-    upsampled.reserve(gis.size() - 1);
-
-    for (std::size_t i = 1; i < gis.size(); ++i)
-    {
-        upsampled.emplace_back(gis[i].upscale(gis[0].size()));
-    }
-
-    root = std::make_unique<QuadtreeNode>(QuadtreeNode::CreateInfo{
-        info.min_mip,
-        1.f, Eigen::Vector2f::Zero(),
-        gis, upsampled
-    });
-
-    {
-        auto& gi = gis[0];
-        auto sz = gi.size() - 1;
-        max_res_corners =
-            { gi(0, 0)
-            , gi(sz, 0)
-            , gi(sz, sz)
-            , gi(0, sz)
-            };
-    }
-}
-
-HierarchicalAtlas::HierarchicalAtlas(std::filesystem::path images_folder)
+HierarchicalAtlas::HierarchicalAtlas(const std::filesystem::path& images_folder)
 {
     std::unordered_set<std::string> prefixes;
     min_mip = 1000; // 2^1000 is a lot
@@ -268,6 +112,17 @@ HierarchicalAtlas::HierarchicalAtlas(std::filesystem::path images_folder)
             }
         }
     }
+
+    for (auto& patch : patches)
+    {
+        for (NodeIdx i = 0; i < patch.nodes.size(); ++i)
+        {
+            for (std::size_t j = 0; j < 4; ++j)
+            {
+                patch.nodes[i].neighbor_search_starts[j] = find_side_neighbor_search_start(NodeHandle{i, &patch}, j);
+            }
+        }
+    }
 }
 
 HierarchyCut HierarchicalAtlas::default_cut()
@@ -276,18 +131,18 @@ HierarchyCut HierarchicalAtlas::default_cut()
 
     for (std::size_t i = 0; i < patches.size(); ++i)
     {
-        result.elements.emplace(patches[i].root.get(),
-            HierarchyCut::CutElement{i, min_mip, {min_mip, min_mip, min_mip, min_mip}, &patches[i]});
+        result.elements.emplace(NodeHandle::root_of(&patches[i]),
+            HierarchyCut::CutElement{i, min_mip, {min_mip, min_mip, min_mip, min_mip}});
     }
 
     return result;
 }
 
-void HierarchyCut::split(QuadtreeNode* node)
+void HierarchyCut::split(NodeHandle node)
 {
     auto it = elements.find(node);
 
-    if (it == elements.end() || node->children[0] == nullptr)
+    if (it == elements.end() || !it->first.has_children())
     {
         return;
     }
@@ -313,13 +168,13 @@ void HierarchyCut::split(QuadtreeNode* node)
         auto copy = data;
         copy.side_mip[inside_edges[i].first] = data.mip;
         copy.side_mip[inside_edges[i].second] = data.mip;
-        elements.emplace(node->children[i].get(), copy);
+        elements.emplace(node.child(i), copy);
     }
 }
 
-std::vector<std::pair<QuadtreeNode*, HierarchyCut::CutElement>> HierarchyCut::dump() const
+std::vector<std::pair<NodeHandle, HierarchyCut::CutElement>> HierarchyCut::dump() const
 {
-    std::vector<std::pair<QuadtreeNode*, HierarchyCut::CutElement>> result;
+    std::vector<std::pair<NodeHandle, HierarchyCut::CutElement>> result;
     for (const auto& pair : elements)
     {
         result.emplace_back(pair);
@@ -327,62 +182,12 @@ std::vector<std::pair<QuadtreeNode*, HierarchyCut::CutElement>> HierarchyCut::du
     return result;
 }
 
-const HierarchyCut::CutElement& HierarchyCut::get_data(QuadtreeNode* node) const
-{
-    return elements.at(node);
-}
-
-QuadtreeNode* find_side_neighbor_search_start(QuadtreeNode* node, AtlasPatch* patch, std::size_t side)
-{
-    std::array bad_child_indices{
-        std::make_pair(0, 1), // side 0
-        std::make_pair(1, 3), // side 1
-        std::make_pair(2, 3), // side 2
-        std::make_pair(0, 2), // side 3
-    };
-
-    while (node->parent != nullptr
-        && (node->parent->children[bad_child_indices[side].first].get() == node
-            || node->parent->children[bad_child_indices[side].second].get() == node))
-    {
-        node = node->parent;
-    }
-
-    if (node->parent == nullptr)
-    {
-        auto neighbor_patch = patch->neighbors[side];
-        if (neighbor_patch != nullptr)
-        {
-            return neighbor_patch->root.get();
-        }
-
-        return nullptr;
-    }
-
-    std::array lookup{
-        std::array{-1, -1,  0,  1},
-        std::array{ 1, -1,  3, -1},
-        std::array{ 2,  3, -1, -1},
-        std::array{-1,  0, -1,  2}
-    };
-
-    for (std::size_t i = 0; i < 4; ++i)
-    {
-        if (node->parent->children[i].get() == node)
-        {
-            return node->parent->children[lookup[side][i]].get();
-        }
-    }
-
-    AD_HOC_PANIC("Something went very wrong");
-}
-
 bool segments_intersect(float a, float b, float c, float d)
 {
     return std::max(a, c) <= std::min(b, d);
 }
 
-bool nodes_touch(QuadtreeNode* first, QuadtreeNode* second, Eigen::Matrix3f transport)
+bool nodes_touch(NodeHandle first, NodeHandle second, const Eigen::Matrix3f& transport)
 {
     Eigen::Vector2f first_start_transformed =
         (transport * Eigen::Vector3f(first->offset.x(), first->offset.y(), 1))
@@ -411,42 +216,40 @@ bool nodes_touch(QuadtreeNode* first, QuadtreeNode* second, Eigen::Matrix3f tran
 /**
  * See AtlasPatch::neighbors for the meaning of side param.
  */
-std::vector<QuadtreeNode*> HierarchyCut::find_side_neighbors(
-    QuadtreeNode* node, std::size_t side)
+std::vector<NodeHandle> HierarchyCut::find_side_neighbors(
+    const NodeHandle node, std::size_t side)
 {
-    AtlasPatch* patch = elements.at(node).root;
+    const AtlasPatch& patch = node.patch();
 
-    std::vector<QuadtreeNode*> result;
+    std::vector<NodeHandle> result;
 
-    auto start = find_side_neighbor_search_start(node, patch, side);
+    auto start = node->neighbor_search_starts[side];
 
-    if (start == nullptr)
+    if (!start.valid())
     {
         return result;
     }
 
-
     Eigen::Matrix3f transport = Eigen::Matrix3f::Identity();
-    if (patch->neighbors[side] != nullptr
-        && start == patch->neighbors[side]->root.get())
+    if (patch.neighbors[side] != nullptr
+        && start == NodeHandle::root_of(patch.neighbors[side]))
     {
         std::array xs{0.f, 1.f, 0.f, -1.f};
         std::array ys{-1.f, 0.f, 1.f, 0.f};
         transport =
             ( Eigen::Translation2f(xs[side], ys[side])
             * Eigen::Translation2f(.5f, .5f)
-            * Eigen::Rotation2Df(float(EIGEN_PI/2 * patch->neighbor_rotation_difference[side]))
+            * Eigen::Rotation2Df(float(EIGEN_PI/2 * patch.neighbor_rotation_difference[side]))
             * Eigen::Translation2f(-.5f, -.5f)
             ).matrix().array().round();
     }
 
-    std::deque<QuadtreeNode*> frontier;
+    std::deque<NodeHandle> frontier;
     frontier.push_back(start);
 
     while (!frontier.empty())
     {
         auto current = frontier.front();
-        //
         frontier.pop_front();
 
         if (!nodes_touch(current, node, transport))
@@ -460,11 +263,11 @@ std::vector<QuadtreeNode*> HierarchyCut::find_side_neighbors(
             continue;
         }
 
-        for (auto& child : current->children)
+        if (current.has_children())
         {
-            if (child)
+            for (std::size_t i = 0; i < 4; ++i)
             {
-                frontier.push_back(child.get());
+                frontier.push_back(current.child(i));
             }
         }
     }
@@ -472,7 +275,7 @@ std::vector<QuadtreeNode*> HierarchyCut::find_side_neighbors(
     return result;
 }
 
-void HierarchyCut::set_mip(QuadtreeNode* node, std::size_t mip)
+void HierarchyCut::set_mip(NodeHandle node, std::size_t mip)
 {
     auto& data = elements.at(node);
     if (data.mip == mip)
@@ -488,10 +291,11 @@ void HierarchyCut::set_mip(QuadtreeNode* node, std::size_t mip)
 
         if (neighbors.empty())
         {
+            elements.at(node).side_mip[i] = mip;
             continue;
         }
 
-        QuadtreeNode* lengthiest = node;
+        NodeHandle lengthiest = node;
         for (auto neighbor : neighbors)
         {
             if (neighbor->size > lengthiest->size)
@@ -506,16 +310,16 @@ void HierarchyCut::set_mip(QuadtreeNode* node, std::size_t mip)
         if (lengthiest != node)
         {
             std::swap(node_side, neighbor_side);
-            if (data.root->neighbors[i] == elements[lengthiest].root)
+            if (node.patch().neighbors[i] == &lengthiest.patch())
             {
-                node_side += data.root->neighbor_rotation_difference[i];
+                node_side += node.patch().neighbor_rotation_difference[i];
             }
         }
         else
         {
-            if (data.root->neighbors[i] == elements[neighbors[0]].root)
+            if (node.patch().neighbors[i] == &neighbors[0].patch())
             {
-                neighbor_side -= data.root->neighbor_rotation_difference[i];
+                neighbor_side -= node.patch().neighbor_rotation_difference[i];
             }
         }
 
@@ -523,7 +327,7 @@ void HierarchyCut::set_mip(QuadtreeNode* node, std::size_t mip)
     }
 }
 
-void HierarchyCut::recalculate_side_mips(QuadtreeNode* node, std::size_t node_side, std::size_t neighbor_side)
+void HierarchyCut::recalculate_side_mips(NodeHandle node, std::size_t node_side, std::size_t neighbor_side)
 {
     auto neighbors = find_side_neighbors(node, node_side);
 
@@ -541,13 +345,13 @@ void HierarchyCut::recalculate_side_mips(QuadtreeNode* node, std::size_t node_si
     elements.at(node).side_mip[node_side] = node->min_tessellation + min;
 }
 
-std::vector<QuadtreeNode*> HierarchyCut::get_nodes() const
+std::vector<NodeHandle> HierarchyCut::get_nodes() const
 {
-    std::vector<QuadtreeNode*> result;
+    std::vector<NodeHandle> result;
     result.reserve(elements.size());
-    for (auto&[node, _] : elements)
+    for (auto& pair : elements)
     {
-        result.push_back(node);
+        result.push_back(pair.first);
     }
     return result;
 }

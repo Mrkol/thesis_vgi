@@ -204,7 +204,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
         static constexpr float TARGET_POLYGONS_PER_PIXEL = 1.f/64.f;
 
         auto wanted_mip =
-            [&raw_ubo, &tick_info](QuadtreeNode* node)
+            [&raw_ubo, &tick_info](NodeHandle node)
             {
                 auto ss_size = float(tick_info.resolution.width * tick_info.resolution.height) *
                     node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)
@@ -214,24 +214,24 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
             };
 
         auto priority =
-            [&wanted_mip](QuadtreeNode* node) -> int64_t
+            [&wanted_mip](NodeHandle node) -> int64_t
             {
-                if (node->children[0] == nullptr)
+                if (!node.has_children())
                 {
                     return -std::numeric_limits<int64_t>::max();
                 }
-                int64_t saved = 1ull << (2*wanted_mip(node));
-                for (auto& child : node->children)
+                int64_t saved = 1ll << (2*wanted_mip(node));
+                for (std::size_t i = 0; i < 4; ++i)
                 {
-                    saved -= 1ull << (2*wanted_mip(child.get()));
+                    saved -= 1ll << (2*wanted_mip(node.child(i)));
                 }
                 return saved;
             };
 
         uint64_t polygon_limit = vgis_.cache_size_pixels();
         uint64_t total_polygons = 0;
-        std::multimap<int64_t, QuadtreeNode*, std::greater<>> queue;
-        for (auto & node : nodes)
+        std::multimap<int64_t, NodeHandle, std::greater<>> queue;
+        for (auto node : nodes)
         {
             auto mip = wanted_mip(node);
             current_cut_.set_mip(node, mip);
@@ -249,11 +249,13 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
             total_polygons -= queue.begin()->first;
             queue.erase(queue.begin());
             current_cut_.split(node);
-            for (auto& child : node->children)
+            if (node.has_children())
             {
-                if (child)
+                for (std::size_t i = 0; i < 4; ++i)
                 {
-                    queue.emplace(priority(child.get()), child.get());
+                    auto child = node.child(i);
+                    current_cut_.set_mip(child, wanted_mip(child));
+                    queue.emplace(priority(child), child);
                 }
             }
         }
@@ -386,7 +388,7 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
 
     // TODO: proper viewmode system for wireframes and lighting toggles
 //    auto geom_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-//        {}, geom_shader.size(), reinterpret_cast<const uint32_t*>(geom_shader.data())
+//        {}, geom_shader_.size(), reinterpret_cast<const uint32_t*>(geom_shader_.data())
 //    });
 
     std::array shader_stages{
