@@ -160,7 +160,7 @@ uint32_t& VirtualTextureSet::access_indirection_table(VirtualTextureSet::PageInf
     return indirection_tables(info.image_index, info.image_mip - min_mip, info.x, info.y);
 }
 
-void VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, float x, float y, float size)
+std::size_t VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, float x, float y, float size)
 {
     std::size_t total_size = mip_to_size(mip);
 
@@ -169,18 +169,32 @@ void VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, float x,
     auto px_x = static_cast<std::size_t>(x * float(total_size - 1) / float(page_side_size - 1));
     auto px_y = static_cast<std::size_t>(y * float(total_size - 1) / float(page_side_size - 1));
 
+    std::size_t result = mip;
     for (std::size_t i = 0; i < px_size; ++i)
     {
         for (std::size_t j = 0; j < px_size; ++j)
         {
-            bump_page(PageInfo{
+            PageInfo page{
                 index,
                 mip,
                 px_x + i,
                 px_y + j
-            });
+            };
+
+            bump_page(page);
+
+            while (access_indirection_table(page) == IndirectionTables::EMPTY)
+            {
+                --page.image_mip;
+                page.x /= 2;
+                page.y /= 2;
+            }
+
+            result = std::min(result, page.image_mip);
         }
     }
+
+    return result;
 }
 
 void VirtualTextureSet::tick()

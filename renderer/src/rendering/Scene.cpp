@@ -67,15 +67,15 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
 //        add_object(std::move(vmesh));
 //    }
-
-    {
-        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");
-        vmesh->scale.setConstant(0.01f);
-        vmesh->position << -10, 0, 0;
-        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(vmesh));
-    }
-
+//
+//    {
+//        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");
+//        vmesh->scale.setConstant(0.01f);
+//        vmesh->position << -10, 0, 0;
+//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(vmesh));
+//    }
+//
 //    {
 //        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
 //        vmesh->scale.setConstant(0.02f);
@@ -149,13 +149,16 @@ void Scene::record_pre_commands(vk::CommandBuffer cb)
 
 void Scene::record_commands(vk::CommandBuffer cb)
 {
+    auto global_uniforms_descriptor_set = global_uniforms_.read_next();
+
+
     for (auto& kv : object_types_)
     {
         auto&[type, pipeline, instances] = kv.second;
 
         cb.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
         cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, type->get_pipeline_layout(), 0,
-            {global_uniforms_.read_next()}, {});
+            {global_uniforms_descriptor_set}, {});
 
 
         for (auto& instance : instances)

@@ -57,29 +57,29 @@ NodeHandle find_side_neighbor_search_start(NodeHandle node, std::size_t side)
 HierarchicalAtlas::HierarchicalAtlas(const std::filesystem::path& images_folder)
 {
     std::unordered_set<std::string> prefixes;
-    min_mip = 1000; // 2^1000 is a lot
-    max_mip = 0;
+    min_mip_ = 1000; // 2^1000 is a lot
+    max_mip_ = 0;
     for (auto& entry : std::filesystem::directory_iterator(images_folder))
     {
         auto name = entry.path().filename().string();
         auto pos = name.rfind(',');
         prefixes.emplace(name.substr(0, pos));
         std::size_t mip = std::stoul(name.substr(pos + 1));
-        min_mip = std::min(min_mip, mip);
-        max_mip = std::max(max_mip, mip);
+        min_mip_ = std::min(min_mip_, mip);
+        max_mip_ = std::max(max_mip_, mip);
     }
 
-    patches.reserve(prefixes.size());
+    patches_.reserve(prefixes.size());
     for (auto& prefix : prefixes)
     {
-        patches.emplace_back(AtlasPatch::CreateInfo{images_folder, prefix, min_mip, max_mip});
+        patches_.emplace_back(AtlasPatch::CreateInfo{images_folder, prefix, min_mip_, max_mip_});
     }
 
     // O(n^2) is ok here as n < 100
     // TODO: or maybe not?
-    for (auto& patch1 : patches)
+    for (auto& patch1 : patches_)
     {
-        for (auto& patch2 : patches)
+        for (auto& patch2 : patches_)
         {
             if (&patch1 == &patch2)
             {
@@ -113,7 +113,7 @@ HierarchicalAtlas::HierarchicalAtlas(const std::filesystem::path& images_folder)
         }
     }
 
-    for (auto& patch : patches)
+    for (auto& patch : patches_)
     {
         for (NodeIdx i = 0; i < patch.nodes.size(); ++i)
         {
@@ -129,10 +129,10 @@ HierarchyCut HierarchicalAtlas::default_cut()
 {
     HierarchyCut result;
 
-    for (std::size_t i = 0; i < patches.size(); ++i)
+    for (std::size_t i = 0; i < patches_.size(); ++i)
     {
-        result.elements.emplace(NodeHandle::root_of(&patches[i]),
-            HierarchyCut::CutElement{i, min_mip, {min_mip, min_mip, min_mip, min_mip}});
+        result.elements_.emplace(NodeHandle::root_of(&patches_[i]),
+            HierarchyCut::CutElement{i, min_mip_, {min_mip_, min_mip_, min_mip_, min_mip_}});
     }
 
     return result;
@@ -140,15 +140,15 @@ HierarchyCut HierarchicalAtlas::default_cut()
 
 void HierarchyCut::split(NodeHandle node)
 {
-    auto it = elements.find(node);
+    auto it = elements_.find(node);
 
-    if (it == elements.end() || !it->first.has_children())
+    if (it == elements_.end() || !it->first.has_children())
     {
         return;
     }
 
     CutElement data = it->second;
-    elements.erase(it);
+    elements_.erase(it);
 
     --data.mip;
     for (auto& m : data.side_mip)
@@ -168,14 +168,14 @@ void HierarchyCut::split(NodeHandle node)
         auto copy = data;
         copy.side_mip[inside_edges[i].first] = data.mip;
         copy.side_mip[inside_edges[i].second] = data.mip;
-        elements.emplace(node.child(i), copy);
+        elements_.emplace(node.child(i), copy);
     }
 }
 
 std::vector<std::pair<NodeHandle, HierarchyCut::CutElement>> HierarchyCut::dump() const
 {
     std::vector<std::pair<NodeHandle, HierarchyCut::CutElement>> result;
-    for (const auto& pair : elements)
+    for (const auto& pair : elements_)
     {
         result.emplace_back(pair);
     }
@@ -184,7 +184,7 @@ std::vector<std::pair<NodeHandle, HierarchyCut::CutElement>> HierarchyCut::dump(
 
 bool segments_intersect(float a, float b, float c, float d)
 {
-    return std::max(a, c) <= std::min(b, d);
+    return std::max(a, c) < std::min(b, d);
 }
 
 bool nodes_touch(NodeHandle first, NodeHandle second, const Eigen::Matrix3f& transport)
@@ -217,7 +217,7 @@ bool nodes_touch(NodeHandle first, NodeHandle second, const Eigen::Matrix3f& tra
  * See AtlasPatch::neighbors for the meaning of side param.
  */
 std::vector<NodeHandle> HierarchyCut::find_side_neighbors(
-    const NodeHandle node, std::size_t side)
+    NodeHandle node, std::size_t side)
 {
     const AtlasPatch& patch = node.patch();
 
@@ -257,7 +257,7 @@ std::vector<NodeHandle> HierarchyCut::find_side_neighbors(
             continue;
         }
 
-        if (elements.contains(current))
+        if (elements_.contains(current))
         {
             result.push_back(current);
             continue;
@@ -277,28 +277,28 @@ std::vector<NodeHandle> HierarchyCut::find_side_neighbors(
 
 void HierarchyCut::set_mip(NodeHandle node, std::size_t mip)
 {
-    auto& data = elements.at(node);
+    auto& data = elements_.at(node);
     if (data.mip == mip)
     {
         return;
     }
 
     data.mip = mip;
-    side_mips_dirty = true;
+    side_mips_dirty_ = true;
 }
 
 void HierarchyCut::recalculate_side_mips()
 {
-    if (!side_mips_dirty)
+    if (!side_mips_dirty_)
     {
         return;
     }
 
-    side_mips_dirty = false;
+    side_mips_dirty_ = false;
 
     constexpr static std::size_t NO_MIP = std::numeric_limits<std::size_t>::max();
 
-    for (auto&[node, data] : elements)
+    for (auto&[node, data] : elements_)
     {
         for (std::size_t i = 0; i < 4; ++i)
         {
@@ -306,7 +306,7 @@ void HierarchyCut::recalculate_side_mips()
         }
     }
 
-    for (auto&[node, data] : elements)
+    for (auto&[node, data] : elements_)
     {
         for (std::size_t i = 0; i < 4; ++i)
         {
@@ -319,7 +319,7 @@ void HierarchyCut::recalculate_side_mips()
 
             if (neighbors.empty())
             {
-                elements.at(node).side_mip[i] = data.mip;
+                elements_.at(node).side_mip[i] = data.mip;
                 continue;
             }
 
@@ -361,25 +361,25 @@ void HierarchyCut::recalculate_side_mips(NodeHandle node, std::size_t node_side,
 {
     auto neighbors = find_side_neighbors(node, node_side);
 
-    std::size_t min = elements.at(node).mip - node->min_tessellation;
+    std::size_t min = elements_.at(node).mip - node->min_tessellation;
     for (auto neighbor : neighbors)
     {
-        min = std::min(min, elements[neighbor].mip - neighbor->min_tessellation);
+        min = std::min(min, elements_[neighbor].mip - neighbor->min_tessellation);
     }
 
     for (auto neighbor : neighbors)
     {
-        elements.at(neighbor).side_mip[neighbor_side] = neighbor->min_tessellation + min;
+        elements_.at(neighbor).side_mip[neighbor_side] = neighbor->min_tessellation + min;
     }
 
-    elements.at(node).side_mip[node_side] = node->min_tessellation + min;
+    elements_.at(node).side_mip[node_side] = node->min_tessellation + min;
 }
 
 std::vector<NodeHandle> HierarchyCut::get_nodes() const
 {
     std::vector<NodeHandle> result;
-    result.reserve(elements.size());
-    for (auto& pair : elements)
+    result.reserve(elements_.size());
+    for (auto& pair : elements_)
     {
         result.push_back(pair.first);
     }

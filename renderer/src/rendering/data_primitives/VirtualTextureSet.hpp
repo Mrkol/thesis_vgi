@@ -29,10 +29,10 @@ public:
         vk::Format format;
         std::size_t format_multiplicity;
 
-        // Minimum mipmap level. Also determines the cache page side size as 2^min_mip
+        // Minimum mipmap level. Also determines the cache page side size as 2^min_mip_
         std::size_t min_mip;
 
-        // image_mip_data[i][j] is the ith image with jth mip level (therefore the size is 2^(min_mip + j)
+        // image_mip_data[i][j] is the ith image with jth mip level (therefore the size is 2^(min_mip_ + j)
         std::vector<std::vector<const std::byte*>> image_mip_data;
     };
 
@@ -50,7 +50,7 @@ public:
 
     void bump_page(PageInfo info);
 
-    void bump_region(std::size_t index, std::size_t mip, float x, float y, float size);
+    std::size_t bump_region(std::size_t index, std::size_t mip, float x, float y, float size);
 
     void tick();
 

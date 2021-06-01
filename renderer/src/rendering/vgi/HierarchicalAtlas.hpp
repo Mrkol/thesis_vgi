@@ -29,20 +29,23 @@ public:
 
     std::vector<std::pair<NodeHandle, CutElement>> dump() const;
     std::vector<NodeHandle> get_nodes() const;
-    std::size_t size() const { return elements.size(); }
+    std::size_t size() const { return elements_.size(); }
 
     void split(NodeHandle node);
     void set_mip(NodeHandle node, std::size_t mip);
 
     void recalculate_side_mips();
 
+    [[nodiscard]] auto begin() { return elements_.begin(); }
+    [[nodiscard]] auto end() { return elements_.end(); }
+
 private:
-    std::vector<NodeHandle> find_side_neighbors(const NodeHandle node, std::size_t side);
+    std::vector<NodeHandle> find_side_neighbors(NodeHandle node, std::size_t side);
     void recalculate_side_mips(NodeHandle node, std::size_t node_side, std::size_t neighbor_side);
 
 private:
-    std::unordered_map<NodeHandle, CutElement> elements;
-    bool side_mips_dirty{false};
+    std::unordered_map<NodeHandle, CutElement> elements_;
+    bool side_mips_dirty_{false};
 };
 
 class HierarchicalAtlas
@@ -50,17 +53,17 @@ class HierarchicalAtlas
 public:
     explicit HierarchicalAtlas(const std::filesystem::path& images_folder);
 
-    const std::vector<GeometryImage>& get_gis(std::size_t idx) { return patches.at(idx).gis; }
+    const std::vector<GeometryImage>& get_gis(std::size_t idx) { return patches_.at(idx).gis; }
 
     [[nodiscard]] HierarchyCut default_cut();
 
-    [[nodiscard]] std::size_t get_hierarchy_depth() const { return min_mip; }
-    [[nodiscard]] std::size_t get_patch_count() const { return patches.size(); }
+    [[nodiscard]] std::size_t get_hierarchy_depth() const { return min_mip_; }
+    [[nodiscard]] std::size_t get_patch_count() const { return patches_.size(); }
 
-    [[nodiscard]] std::size_t get_min_mip() const { return min_mip; }
+    [[nodiscard]] std::size_t get_min_mip() const { return min_mip_; }
 
 private:
-    std::vector<AtlasPatch> patches;
-    std::size_t max_mip;
-    std::size_t min_mip;
+    std::vector<AtlasPatch> patches_;
+    std::size_t max_mip_;
+    std::size_t min_mip_;
 };

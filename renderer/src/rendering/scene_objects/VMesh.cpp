@@ -195,7 +195,6 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
     };
     ubo_.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
 
-
     {
         current_cut_ = atlas_.default_cut();
 
@@ -261,68 +260,57 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
         }
     }
 
-    current_cut_.recalculate_side_mips();
-
-
-    auto nodes_to_render = current_cut_.dump();
-
-    // Keeps the order stable for easier debug
-    // TODO: remove
-    std::sort(nodes_to_render.begin(), nodes_to_render.end(),
-        [](const auto& p, const auto& q)
-        {
-            return p.second.patch_idx < q.second.patch_idx;
-        });
-
-
     // TODO: remove, debug
 //    ImGui::Begin("VMesh");
 //    std::size_t kek = 0;
-//    for (auto&[node, data] : nodes_to_render)
+//    for (auto&[node, data] : current_cut_)
 //    {
 //        ImGui::PushID(std::to_string(kek).c_str());
 //
 //        if (ImGui::Button("X", ImVec2{20, 20}))
 //        {
-//            current_cut.split(node);
+//            current_cut_.split(node);
+//            ImGui::PopID();
+//            break;
 //        }
-//        else
-//        {
-//            ImGui::SameLine();
 //
-//            std::size_t mip = data.mip;
-//            ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
-//                ImGuiDataType_U64, &mip,
-//                &node->min_tessellation, &node->max_tessellation);
-//            current_cut.set_mip(node, mip);
 //
-//            ImGui::SameLine();
-//            ImGui::Text(std::to_string(
-//                node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)).c_str());
-//        }
+//        ImGui::SameLine();
+//
+//        std::size_t mip = data.mip;
+//        ImGui::SliderScalar((std::to_string(kek++) + "(" + std::to_string(data.patch_idx) + ")").c_str(),
+//            ImGuiDataType_U64, &mip,
+//            &node->min_tessellation, &node->max_tessellation);
+//        current_cut_.set_mip(node, mip);
 //
 //        ImGui::PopID();
 //    }
 //    ImGui::End();
 
-    for (auto&[node, data] : nodes_to_render)
+    for (auto&[node, data] : current_cut_)
     {
-        vgis_.bump_region(
+        auto avail_mip = vgis_.bump_region(
             data.patch_idx,
-            std::clamp(std::size_t(std::log2(float(1 << data.mip) / node->size)),
+            std::clamp(std::size_t(float(data.mip) - std::log2(node->size)),
                 atlas_.get_min_mip(), atlas_.get_min_mip() + vgis_.get_mip_level_count() - 1),
             node->offset.x(),
             node->offset.y(),
             node->size
         );
+
+        current_cut_.set_mip(node,
+            std::clamp(std::size_t(float(avail_mip) + std::log2(node->size)),
+                node->min_tessellation, node->max_tessellation));
     }
+
+    current_cut_.recalculate_side_mips();
 
     {
         auto pidata = reinterpret_cast<PerInstanceData*>(vbo_.get_current().data());
 
         auto mip_transform = [](std::size_t mip) { return static_cast<float>(1 << mip); };
 
-        for (auto&[node, data] : nodes_to_render)
+        for (auto&[node, data] : current_cut_)
         {
             pidata->mip = mip_transform(data.mip);
             pidata->side_mips.x() = mip_transform(data.side_mip[0]);

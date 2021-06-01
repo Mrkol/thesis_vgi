@@ -198,14 +198,9 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
 
 void Renderer::render(float delta_seconds)
 {
-    auto& data = per_inflight_frame_data_[current_frame_idx_];
+    auto& data = per_inflight_frame_data_[current_frame_idx_++ % MAX_FRAMES_IN_FLIGHT];
 
     device_->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
-
-    gui_->tick(delta_seconds);
-    // Scene::tick can show debug imgui thingies
-    scene_->tick(delta_seconds);
-    gui_->render();
 
     uint32_t idx;
     {
@@ -222,6 +217,13 @@ void Renderer::render(float delta_seconds)
             throw std::runtime_error("Failed to acquire swapchain image!");
         }
     }
+
+    // Cannot be moved further up as recreating the swapchain without running record_commands is wrong!!!
+    // tick creates objects, record_commands consumes. If objects don't get consumed, everything breaks
+    gui_->tick(delta_seconds);
+    // Scene::tick can show debug imgui thingies
+    scene_->tick(delta_seconds);
+    gui_->render();
 
     auto& swapchain_element = swapchain_data_.elements[idx];
 
@@ -275,9 +277,6 @@ void Renderer::render(float delta_seconds)
             throw std::runtime_error("Graphics queue submission failed!");
         }
     }
-
-    ++current_frame_idx_;
-    current_frame_idx_ %= MAX_FRAMES_IN_FLIGHT;
 }
 
 vk::Extent2D Renderer::chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities)
