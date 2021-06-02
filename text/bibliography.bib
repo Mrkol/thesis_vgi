@@ -196,3 +196,20 @@ eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1467-8659.2007.01108
 abstract = {Abstract This paper reviews the latest developments of displacement mapping algorithms implemented on the vertex, geometry, and fragment shaders of graphics cards. Displacement mapping algorithms are classified as per-vertex and per-pixel methods. Per-pixel approaches are further categorized as safe algorithms that aim at correct solutions in all cases, to unsafe techniques that may fail in extreme cases but are usually much faster than safe algorithms, and to combined methods that exploit the robustness of safe and the speed of unsafe techniques. We discuss the possible roles of vertex, geometry and fragment shaders to implement these algorithms. Then the particular GPU-based bump, parallax, relief, sphere, horizon mapping, cone stepping, local ray tracing, pyramidal and view-dependent displacement mapping methods, as well as their numerous variations are reviewed providing also implementation details of the shader programs. We present these methods using uniform notations and also point out when different authors called similar concepts differently. In addition to basic displacement mapping, self-shadowing and silhouette processing are also reviewed. Based on our experiences gained having reimplemented these methods, their performance and quality are compared, and the advantages and disadvantages are fairly presented.},
 year = {2008}
 }
+
+@inproceedings{ssdm,
+author = {Lee, Aaron and Moreton, Henry and Hoppe, Hugues},
+title = {Displaced Subdivision Surfaces},
+year = {2000},
+isbn = {1581132085},
+publisher = {ACM Press/Addison-Wesley Publishing Co.},
+address = {USA},
+url = {https://doi.org/10.1145/344779.344829},
+doi = {10.1145/344779.344829},
+abstract = {In this paper we introduce a new surface representing, the displaced subdivision surface. It represents a detailed surface model as a scalar-valued displacement over a smooth domain surface. Our representation defines both the domain surface and the displacement function using a unified subdivision framework, allowing for simple and efficient evaluation of analytic surface properties. We present a simple, automatic scheme for converting detailed geometric models into such a representation. The challenge in this conversion process is to find a simple subdivision surface that still faithfully expresses the detailed model as its offset. We demonstrate that displaced subdivision surfaces offer a number of benefits, including geometry compression, editing, animation, scalability, and adaptive rendering. In particular, the encoding of fine detail as a scalar function makes the representation extremely compact.},
+booktitle = {Proceedings of the 27th Annual Conference on Computer Graphics and Interactive Techniques},
+pages = {85–94},
+numpages = {10},
+keywords = {displacement maps, geometry compression, multiresolution editing, multiresolution geometry, animation, bump maps},
+series = {SIGGRAPH '00}
+}
