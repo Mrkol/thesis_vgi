@@ -33,4 +33,7 @@ public:
 private:
     vk::UniqueDescriptorPool descriptor_pool_;
     vk::UniqueRenderPass render_pass_;
+
+    std::array<float, 1000> last_frame_ms_{1};
+    std::size_t last_frame_idx_{0};
 };

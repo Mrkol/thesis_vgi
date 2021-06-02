@@ -562,6 +562,11 @@ UniqueVmaBuffer Renderer::create_vbo(std::size_t size)
     return UniqueVmaBuffer(allocator_, size, vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
+UniqueVmaBuffer Renderer::create_ibo(std::size_t size)
+{
+    return UniqueVmaBuffer(allocator_, size, vk::BufferUsageFlagBits::eIndexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
 RingBuffer Renderer::create_dynamic_vbo(std::size_t size)
 {
     return RingBuffer({

@@ -1,11 +1,11 @@
 #include "Scene.hpp"
 
-#include <imgui.h>
 #include <functional>
 
 #include "SceneObjectBase.hpp"
 #include "scene_objects/Grid.hpp"
 #include "scene_objects/VMesh.hpp"
+#include "scene_objects/StaticMesh.hpp"
 #include "../EigenHelpers.hpp"
 #include "data_primitives/RingBuffer.hpp"
 
@@ -51,22 +51,29 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //        add_object(std::move(vmesh));
 //    }
 
-    {
-        auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
-        vmesh->scale.setConstant(0.01f);
-        vmesh->position << 0, 0, -5;
-        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(vmesh));
-    }
-
 //    {
-//        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
+//        auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
 //        vmesh->scale.setConstant(0.01f);
 //        vmesh->position << 0, 0, -5;
-//        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
-//            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
 //        add_object(std::move(vmesh));
 //    }
+//
+//    {
+//        auto mesh = std::make_unique<StaticMesh>("../../models/rock_cliffs_old/uchwaffda_High.obj");
+//        mesh->scale.setConstant(0.01f);
+//        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(mesh));
+//    }
+//
+    {
+        auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
+        vmesh->scale.setConstant(0.01f);
+        vmesh->position << 0, 0, -5;
+        vmesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
+            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(vmesh));
+    }
 //
 //    {
 //        auto vmesh = std::make_unique<VMesh>("../../models/nature_snow_old");

@@ -100,8 +100,23 @@ void Gui::tick(float delta_seconds)
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Text("%f fps", 1.f/delta_seconds);
-    ImGui::Text("%f ms", delta_seconds * 1000.f);
+    last_frame_ms_[last_frame_idx_++ % last_frame_ms_.size()] = delta_seconds;
+
+    float avg = 0;
+    float min = 1000000;
+    float max = 0;
+    for (auto i : last_frame_ms_)
+    {
+        avg += i;
+        min = std::min(min, i);
+        max = std::max(min, i);
+    }
+
+    avg /= float(last_frame_ms_.size());
+
+    ImGui::Text("Avg: %f fps", 1.f/avg);
+    ImGui::Text("Min: %f fps", 1.f/max);
+    ImGui::Text("Max: %f fps", 1.f/min);
 }
 
 void Gui::render()

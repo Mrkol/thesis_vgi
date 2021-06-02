@@ -6,6 +6,7 @@ find_package(Vulkan REQUIRED)
 
 
 add_subdirectory(function2)
+add_subdirectory(tinyobjloader)
 
 add_library(VulkanMemoryAllocator INTERFACE)
 target_include_directories(VulkanMemoryAllocator INTERFACE VulkanMemoryAllocator/include/)

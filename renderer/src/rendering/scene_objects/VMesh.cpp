@@ -121,7 +121,7 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     std::size_t curr_offset = 0;
     for (std::size_t i = 0; i < TEXTURE_MAP_COUNT; ++i)
     {
-        copy_ops[i] =vk::BufferImageCopy{
+        copy_ops[i] = vk::BufferImageCopy{
             static_cast<uint32_t>(curr_offset),
             static_cast<uint32_t>(texture_maps_[i].width()), static_cast<uint32_t>(texture_maps_[i].height()),
             vk::ImageSubresourceLayers{

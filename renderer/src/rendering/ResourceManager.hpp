@@ -16,6 +16,7 @@ public:
     virtual DescriptorSetRing create_descriptor_set_ring(vk::DescriptorSetLayout layout) = 0;
     virtual vk::UniqueDescriptorSet create_descriptor_set(vk::DescriptorSetLayout layout) = 0;
     virtual UniqueVmaBuffer create_vbo(std::size_t size) = 0;
+    virtual UniqueVmaBuffer create_ibo(std::size_t size) = 0;
     virtual RingBuffer create_dynamic_vbo(std::size_t size) = 0;
 
     virtual UniqueVmaImage create_texture(vk::Extent2D extent, std::size_t layers) = 0;
