@@ -1,7 +1,6 @@
 #include "Grid.hpp"
 
 #include <Eigen/Dense>
-#include <vk_mem_alloc.h>
 
 #include "VkHelpers.hpp"
 
@@ -210,7 +209,7 @@ vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
         0,
         {},
         -1
-    });
+    }).value;
 }
 
 void fill_grid_vbo(UniqueVmaBuffer& buffer, std::size_t grid_size)

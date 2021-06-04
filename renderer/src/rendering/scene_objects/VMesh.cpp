@@ -534,7 +534,7 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         0,
         {},
         -1
-    });
+    }).value;
 }
 
 void VMeshSceneObjectType::reload_shaders()

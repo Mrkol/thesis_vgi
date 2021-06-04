@@ -11,7 +11,7 @@ UniqueVmaImage::UniqueVmaImage(VmaAllocator allocator, vk::Format format, vk::Ex
         1,
         static_cast<uint32_t>(layers),
         vk::SampleCountFlagBits::e1, tiling, image_usage, vk::SharingMode::eExclusive,
-        0, nullptr, vk::ImageLayout::eUndefined
+        {}, vk::ImageLayout::eUndefined
     };
     VmaAllocationCreateInfo alloc_info{
         .usage = memory_usage

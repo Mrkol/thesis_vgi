@@ -8,7 +8,7 @@ UniqueVmaBuffer::UniqueVmaBuffer(VmaAllocator allocator, std::size_t size,
     vk::BufferCreateInfo buf_info{
         {}, size,
         buffer_usage, vk::SharingMode::eExclusive,
-        0, nullptr
+        {}
     };
 
     VmaAllocationCreateInfo alloc_info{

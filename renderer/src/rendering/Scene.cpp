@@ -67,6 +67,14 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
 //    }
 //
     {
+        auto mesh = std::make_unique<StaticMesh>("../../models/rock_cliffs_old/uchwaffda_LOD0");
+        mesh->scale.setConstant(0.01f);
+        mesh->position << 10, 0, -5;
+        mesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
+            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+        add_object(std::move(mesh));
+    }
+    {
         auto vmesh = std::make_unique<VMesh>("../../models/rock_cliffs_old");
         vmesh->scale.setConstant(0.01f);
         vmesh->position << 0, 0, -5;

@@ -40,43 +40,68 @@ StaticMesh::StaticMesh(const std::filesystem::path& model)
         AD_HOC_ASSERT(map.width() == texture_maps_[0].width() && map.height() == texture_maps_[0].height(), "Oops");
     }
 
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
+    std::vector<std::filesystem::path> lod_paths;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model.c_str())) {
-        throw std::runtime_error(warn + err);
+    if (auto filename_string = model.filename().string();
+        filename_string.ends_with("_LOD0"))
+    {
+        filename_string = filename_string.substr(0, filename_string.size() - 1);
+        auto lod_file = model.parent_path() / (filename_string + std::to_string(0) + ".obj");
+        std::size_t i = 0;
+        while (exists(lod_file))
+        {
+            lod_paths.push_back(lod_file);
+            lod_file = model.parent_path() / (filename_string + std::to_string(i++) + ".obj");
+        }
+    }
+    else
+    {
+        lod_paths.push_back(model.parent_path() / (filename_string + ".obj"));
     }
 
     std::unordered_map<Vertex, uint32_t> unique_verts;
-
-    for (const auto& shape : shapes)
+    for (const auto& lod : lod_paths)
     {
-        for (const auto& index : shape.mesh.indices)
+        lod_offsets_.push_back(indices_.size());
+
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, lod.c_str()))
         {
-            Vertex vertex{
-                Eigen::Vector4f(
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2],
-                    attrib.texcoords[2 * index.texcoord_index + 0]),
-                Eigen::Vector4f(
-                    attrib.normals[3 * index.normal_index + 0],
-                    attrib.normals[3 * index.normal_index + 1],
-                    attrib.normals[3 * index.normal_index + 2],
-                    1.f - attrib.texcoords[2 * index.texcoord_index + 1])
-            };
+            throw std::runtime_error(warn + err);
+        }
 
-            auto it = unique_verts.find(vertex);
-            if (it == unique_verts.end()) {
-                it = unique_verts.emplace(vertex, static_cast<uint32_t>(attributes_.size())).first;
-                attributes_.push_back(vertex);
+        for (const auto& shape : shapes)
+        {
+            for (const auto& index : shape.mesh.indices)
+            {
+                Vertex vertex{
+                    Eigen::Vector4f(
+                        attrib.vertices[3 * index.vertex_index + 0],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2],
+                        attrib.texcoords[2 * index.texcoord_index + 0]),
+                    Eigen::Vector4f(
+                        attrib.normals[3 * index.normal_index + 0],
+                        attrib.normals[3 * index.normal_index + 1],
+                        attrib.normals[3 * index.normal_index + 2],
+                        1.f - attrib.texcoords[2 * index.texcoord_index + 1])
+                };
+
+                auto it = unique_verts.find(vertex);
+                if (it == unique_verts.end()) {
+                    it = unique_verts.emplace(vertex, static_cast<uint32_t>(attributes_.size())).first;
+                    attributes_.push_back(vertex);
+                }
+
+                indices_.push_back(it->second);
             }
-
-            indices_.push_back(it->second);
         }
     }
+    lod_offsets_.push_back(indices_.size());
 }
 
 void StaticMesh::on_type_object_available(SceneObjectType& type)
@@ -208,6 +233,11 @@ void StaticMesh::tick(float delta_seconds, TickInfo tick_info)
         normal_mat
     };
 
+    auto dist_squared = (tick_info.view * model_mat * Eigen::Vector3f::Zero().homogeneous()).squaredNorm() / 10.f;
+    current_lod_ = std::clamp(
+        std::size_t(dist_squared),
+        std::size_t{0}, lod_offsets_.size() - 2);
+
     ubo_.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
 }
 
@@ -221,8 +251,8 @@ void StaticMesh::record_commands(vk::CommandBuffer cb)
     cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, our_type_->get_pipeline_layout(), 1,
         static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
 
-    cb.bindIndexBuffer(ibo_.get(), 0, vk::IndexType::eUint32);
-    cb.drawIndexed(indices_.size(), 1, 0, 0, 0);
+    cb.bindIndexBuffer(ibo_.get(), lod_offsets_[current_lod_] * sizeof(indices_[0]), vk::IndexType::eUint32);
+    cb.drawIndexed(lod_offsets_[current_lod_ + 1] - lod_offsets_[current_lod_], 1, 0, 0, 0);
 }
 
 const SceneObjectTypeFactory& StaticMesh::get_scene_object_type_factory() const
@@ -373,7 +403,7 @@ vk::UniquePipeline StaticMeshSceneObjectType::create_pipeline(SceneObjectType::P
         0,
         {},
         -1
-    });
+    }).value;
 }
 
 void StaticMeshSceneObjectType::reload_shaders()

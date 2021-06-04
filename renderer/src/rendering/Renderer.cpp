@@ -200,7 +200,11 @@ void Renderer::render(float delta_seconds)
 {
     auto& data = per_inflight_frame_data_[current_frame_idx_++ % MAX_FRAMES_IN_FLIGHT];
 
-    device_->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max());
+    if (device_->waitForFences({data.in_flight_fence.get()}, true, std::numeric_limits<uint64_t>::max())
+        != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Inflight fence timeout!");
+    }
 
     uint32_t idx;
     {
@@ -229,7 +233,11 @@ void Renderer::render(float delta_seconds)
 
     if (swapchain_element.image_fence)
     {
-        device_->waitForFences({swapchain_element.image_fence}, true, std::numeric_limits<uint64_t>::max());
+        if (device_->waitForFences({swapchain_element.image_fence}, true, std::numeric_limits<uint64_t>::max())
+            != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("Swapchain image fence timeout!");
+        }
     }
 
     swapchain_element.image_fence = data.in_flight_fence.get();
@@ -253,8 +261,12 @@ void Renderer::render(float delta_seconds)
     };
 
     device_->resetFences({data.in_flight_fence.get()});
-    graphics_queue_.submit(
-        static_cast<uint32_t>(submits.size()), submits.data(), data.in_flight_fence.get());
+
+    if (graphics_queue_.submit(
+        static_cast<uint32_t>(submits.size()), submits.data(), data.in_flight_fence.get()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Graphics queue submission failed!");
+    }
 
     {
         std::array swapchains{swapchain_data_.swapchain.get()};

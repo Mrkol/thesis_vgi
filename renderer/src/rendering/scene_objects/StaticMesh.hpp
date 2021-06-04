@@ -34,6 +34,9 @@ private:
 
     std::vector<uint32_t> indices_;
     std::vector<Vertex> attributes_;
+    std::vector<uint32_t> lod_offsets_;
+
+    std::size_t current_lod_{0};
 
     class StaticMeshSceneObjectType* our_type_{nullptr};
 
