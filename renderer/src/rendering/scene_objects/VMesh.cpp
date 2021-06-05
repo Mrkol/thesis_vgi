@@ -79,12 +79,12 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     };
 
     descriptors_.write_all(std::vector(descriptors_.size(), vk::WriteDescriptorSet{
-        {}, 1, 0,
+        {}, 2, 0,
         1, vk::DescriptorType::eCombinedImageSampler,
         &descriptor_image_info, nullptr, nullptr
     }));
 
-    descriptors_.write_sbo(vgis_.get_indirection_table_sbo(), 2);
+    descriptors_.write_sbo(vgis_.get_indirection_table_sbo(), 3);
 
 
 
@@ -169,7 +169,7 @@ void VMesh::on_type_object_available(SceneObjectType& type)
     };
     descriptors_.write_all(std::vector(descriptors_.size(),
         vk::WriteDescriptorSet{
-            {}, 3, 0,
+            {}, 1, 0,
             1, vk::DescriptorType::eCombinedImageSampler, &info, nullptr, nullptr
         }
     ));
@@ -209,7 +209,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
                     node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)
                         * TARGET_POLYGONS_PER_PIXEL;
                 return std::size_t(std::clamp(std::log2(ss_size) / 2.f,
-                    float(node->min_tessellation), float(node->max_tessellation)));
+                    0.5f, float(node->max_tessellation)));
             };
 
         auto priority =
@@ -289,7 +289,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
     for (auto&[node, data] : current_cut_)
     {
-        auto avail_mip = vgis_.bump_region(
+        auto avail_gi = vgis_.bump_region(
             data.patch_idx,
             std::clamp(std::size_t(float(data.mip) - std::log2(node->size)),
                 atlas_.get_min_mip(), atlas_.get_min_mip() + vgis_.get_mip_level_count() - 1),
@@ -298,9 +298,14 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
             node->size
         );
 
-        current_cut_.set_mip(node,
-            std::clamp(std::size_t(float(avail_mip) + std::log2(node->size)),
-                node->min_tessellation, node->max_tessellation));
+        auto avail_mip = std::clamp(
+            std::size_t(float(avail_gi) + std::log2(node->size)),
+            0ul, node->max_tessellation);
+
+        if (avail_mip < data.mip)
+        {
+            current_cut_.set_mip(node, avail_mip);
+        }
     }
 
     current_cut_.recalculate_side_mips();
@@ -308,7 +313,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
     {
         auto pidata = reinterpret_cast<PerInstanceData*>(vbo_.get_current().data());
 
-        auto mip_transform = [](std::size_t mip) { return static_cast<float>(1 << mip); };
+        auto mip_transform = [](std::size_t mip) { return static_cast<float>(1ul << mip); };
 
         for (auto&[node, data] : current_cut_)
         {
@@ -352,46 +357,35 @@ void VMesh::record_commands(vk::CommandBuffer cb)
 
 VMeshSceneObjectType::VMeshSceneObjectType(IResourceManager* irm)
     : SceneObjectType(irm)
+    , vertex_shader_{irm->get_shader("vgi.vert")}
+    , tess_ctrl_shader_{irm->get_shader("vgi.tesc")}
+    , tess_eval_shader_{irm->get_shader("vgi.tese")}
+    , geom_shader_{irm->get_shader("wireframe.geom")}
+    , fragment_shader_{irm->get_shader("phong.frag")}
 {
-    load_shaders();
 }
 
 vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::PipelineCreateInfo info)
 {
     auto device = resource_manager_->get_device();
-    auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, vertex_shader_.size(), reinterpret_cast<const uint32_t*>(vertex_shader_.data())
-    });
 
-    auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, fragment_shader_.size(), reinterpret_cast<const uint32_t*>(fragment_shader_.data())
-    });
-
-    auto tess_ctrl_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, tess_ctrl_shader_.size(), reinterpret_cast<const uint32_t*>(tess_ctrl_shader_.data())
-    });
-
-    auto tess_eval_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, tess_eval_shader_.size(), reinterpret_cast<const uint32_t*>(tess_eval_shader_.data())
-    });
-
-    // TODO: proper viewmode system for wireframes and lighting toggles
-//    auto geom_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-//        {}, geom_shader_.size(), reinterpret_cast<const uint32_t*>(geom_shader_.data())
-//    });
-
-    std::array shader_stages{
+    std::vector shader_stages{
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"},
+            {{}, vk::ShaderStageFlagBits::eVertex, vertex_shader_->get(), "main"},
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"},
+            {{}, vk::ShaderStageFlagBits::eTessellationControl, tess_ctrl_shader_->get(), "main"},
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eTessellationControl, tess_ctrl_module.get(), "main"},
+            {{}, vk::ShaderStageFlagBits::eTessellationEvaluation, tess_eval_shader_->get(), "main"},
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eTessellationEvaluation, tess_eval_module.get(), "main"},
-//        vk::PipelineShaderStageCreateInfo
-//            {{}, vk::ShaderStageFlagBits::eGeometry, geom_module.get(), "main"}
+            {{}, vk::ShaderStageFlagBits::eFragment, fragment_shader_->get(), "main"}
     };
+
+    if (info.mode == ViewMode::Wireframe)
+    {
+        shader_stages.push_back(
+            vk::PipelineShaderStageCreateInfo
+                {{}, vk::ShaderStageFlagBits::eGeometry, geom_shader_->get(), "main"});
+    }
 
     vk::VertexInputBindingDescription vertex_input_binding_description
         {0, sizeof(PerInstanceData), vk::VertexInputRate::eInstance};
@@ -484,21 +478,21 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
             /* binding */ 1,
             vk::DescriptorType::eCombinedImageSampler,
             /* descriptor count */ 1,
-            vk::ShaderStageFlagBits::eTessellationEvaluation,
+            vk::ShaderStageFlagBits::eFragment,
             nullptr
         },
         vk::DescriptorSetLayoutBinding{
             /* binding */ 2,
-            vk::DescriptorType::eStorageBuffer,
+            vk::DescriptorType::eCombinedImageSampler,
             /* descriptor count */ 1,
             vk::ShaderStageFlagBits::eTessellationEvaluation,
             nullptr
         },
         vk::DescriptorSetLayoutBinding{
             /* binding */ 3,
-            vk::DescriptorType::eCombinedImageSampler,
+            vk::DescriptorType::eStorageBuffer,
             /* descriptor count */ 1,
-            vk::ShaderStageFlagBits::eFragment,
+            vk::ShaderStageFlagBits::eTessellationEvaluation,
             nullptr
         },
     };
@@ -535,18 +529,4 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         {},
         -1
     }).value;
-}
-
-void VMeshSceneObjectType::reload_shaders()
-{
-    load_shaders();
-}
-
-void VMeshSceneObjectType::load_shaders()
-{
-    vertex_shader_ = VkHelpers::read_shader("vgi.vert");
-    fragment_shader_ = VkHelpers::read_shader("vgi.frag");
-    tess_ctrl_shader_ = VkHelpers::read_shader("vgi.tesc");
-    tess_eval_shader_ = VkHelpers::read_shader("vgi.tese");
-    geom_shader_ = VkHelpers::read_shader("vgi.geom");
 }

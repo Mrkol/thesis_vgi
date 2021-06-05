@@ -84,7 +84,8 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     , display_surface_{std::move(surface)}
 {
     // TODO: Proper device selection
-    physical_device_ = vulkan_instance_.enumeratePhysicalDevices().front();
+    auto pdevices = vulkan_instance_.enumeratePhysicalDevices();
+    physical_device_ = pdevices.front();
 
     queue_family_indices_ = chose_queue_families(physical_device_, display_surface_.get());    
 
@@ -291,6 +292,17 @@ void Renderer::render(float delta_seconds)
     }
 }
 
+void Renderer::recreate_pipelines()
+{
+    if (scene_ != nullptr)
+    {
+        scene_->recreate_pipelines(PipelineCreationInfo{
+            swapchain_data_.render_pass.get(),
+            swapchain_data_.extent
+        });
+    }
+}
+
 vk::Extent2D Renderer::chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities)
 {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
@@ -461,13 +473,7 @@ void Renderer::create_swapchain()
             }).front());
     }
 
-    if (scene_ != nullptr)
-    {
-        scene_->recreate_pipelines(PipelineCreationInfo{
-            swapchain_data_.render_pass.get(),
-            swapchain_data_.extent
-        });
-    }
+    recreate_pipelines();
 
     if (gui_ != nullptr)
     {
@@ -494,6 +500,11 @@ void Renderer::create_gui_framebuffers()
 void Renderer::on_window_resized()
 {
     swapchain_data_.needs_recreation = true;
+}
+
+void Renderer::toggle_gui()
+{
+    gui_->show_gui = !gui_->show_gui;
 }
 
 void Renderer::record_commands(std::size_t swapchain_idx)
@@ -640,10 +651,29 @@ void Renderer::finish_single_time_commands(vk::UniqueCommandBuffer cb)
 
 void Renderer::hotswap_shaders()
 {
-    scene_->reload_shaders();
     device_->waitIdle();
-    scene_->recreate_pipelines(PipelineCreationInfo{
-        swapchain_data_.render_pass.get(),
-        swapchain_data_.extent
-    });
+
+    for (auto[name, weak_ptr] : shader_cache_)
+    {
+        if (auto ptr = weak_ptr.lock())
+        {
+            ptr->reload(device_.get());
+        }
+    }
+
+    recreate_pipelines();
+}
+
+ShaderPtr Renderer::get_shader(std::string_view name)
+{
+    auto& weak = shader_cache_[std::string{name}];
+    ShaderPtr result = weak.lock();
+
+    if (result == nullptr)
+    {
+        result = std::make_shared<Shader>(device_.get(), name);
+        weak = result;
+    }
+
+    return result;
 }

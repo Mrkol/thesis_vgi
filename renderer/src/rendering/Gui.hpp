@@ -13,12 +13,12 @@ public:
         vk::Instance instance;
         vk::PhysicalDevice physical_device;
         vk::Device device;
-        class IResourceManager* irm;
+        class IResourceManager* irm{nullptr};
 
-        uint32_t graphics_queue_idx;
+        uint32_t graphics_queue_idx{};
         vk::Queue graphics_queue;
-        std::size_t swapchain_size;
-        vk::Format format;
+        std::size_t swapchain_size{};
+        vk::Format format{};
     };
 
     explicit Gui(CreateInfo info);
@@ -30,6 +30,10 @@ public:
     void render();
 
     void record_commands(vk::CommandBuffer cb, vk::Framebuffer framebuffer, vk::Rect2D area);
+
+public:
+    bool show_gui{true};
+
 private:
     vk::UniqueDescriptorPool descriptor_pool_;
     vk::UniqueRenderPass render_pass_;

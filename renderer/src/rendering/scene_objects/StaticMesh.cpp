@@ -59,6 +59,9 @@ StaticMesh::StaticMesh(const std::filesystem::path& model)
         lod_paths.push_back(model.parent_path() / (filename_string + ".obj"));
     }
 
+    bb_min_.setConstant(std::numeric_limits<float>::max());
+    bb_max_.setConstant(-std::numeric_limits<float>::max());
+
     std::unordered_map<Vertex, uint32_t> unique_verts;
     for (const auto& lod : lod_paths)
     {
@@ -90,6 +93,9 @@ StaticMesh::StaticMesh(const std::filesystem::path& model)
                         attrib.normals[3 * index.normal_index + 2],
                         1.f - attrib.texcoords[2 * index.texcoord_index + 1])
                 };
+
+                bb_min_ = bb_min_.cwiseMin(vertex.position.block<3, 1>(0, 0)).eval();
+                bb_max_ = bb_max_.cwiseMax(vertex.position.block<3, 1>(0, 0)).eval();
 
                 auto it = unique_verts.find(vertex);
                 if (it == unique_verts.end()) {
@@ -233,9 +239,10 @@ void StaticMesh::tick(float delta_seconds, TickInfo tick_info)
         normal_mat
     };
 
-    auto dist_squared = (tick_info.view * model_mat * Eigen::Vector3f::Zero().homogeneous()).squaredNorm() / 10.f;
+    auto dist = (tick_info.view * model_mat * Eigen::Vector3f::Zero().homogeneous()).norm();
+    auto size = std::cbrt((model_mat * (bb_max_ - bb_min_).homogeneous()).cwiseAbs().prod());
     current_lod_ = std::clamp(
-        std::size_t(dist_squared),
+        std::size_t(dist * size / 100 * float(lod_offsets_.size() - 1)),
         std::size_t{0}, lod_offsets_.size() - 2);
 
     ubo_.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
@@ -263,27 +270,29 @@ const SceneObjectTypeFactory& StaticMesh::get_scene_object_type_factory() const
 
 StaticMeshSceneObjectType::StaticMeshSceneObjectType(class IResourceManager* irm)
     : SceneObjectType(irm)
+    , vertex_shader_{irm->get_shader("static.vert")}
+    , fragment_shader_{irm->get_shader("phong.frag")}
+    , geom_shader_{irm->get_shader("wireframe.geom")}
 {
-    load_shaders();
 }
 
 vk::UniquePipeline StaticMeshSceneObjectType::create_pipeline(SceneObjectType::PipelineCreateInfo info)
 {
     auto device = resource_manager_->get_device();
-    auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, vertex_shader_.size(), reinterpret_cast<const uint32_t*>(vertex_shader_.data())
-    });
 
-    auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {}, fragment_shader_.size(), reinterpret_cast<const uint32_t*>(fragment_shader_.data())
-    });
-
-    std::array shader_stages{
+    std::vector shader_stages{
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"},
+            {{}, vk::ShaderStageFlagBits::eVertex, vertex_shader_->get(), "main"},
         vk::PipelineShaderStageCreateInfo
-            {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"},
+            {{}, vk::ShaderStageFlagBits::eFragment, fragment_shader_->get(), "main"},
     };
+
+    if (info.mode == ViewMode::Wireframe)
+    {
+        shader_stages.push_back(
+            vk::PipelineShaderStageCreateInfo
+                {{}, vk::ShaderStageFlagBits::eGeometry, geom_shader_->get(), "main"});
+    }
 
     vk::VertexInputBindingDescription vertex_input_binding_description
         {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
@@ -404,15 +413,4 @@ vk::UniquePipeline StaticMeshSceneObjectType::create_pipeline(SceneObjectType::P
         {},
         -1
     }).value;
-}
-
-void StaticMeshSceneObjectType::reload_shaders()
-{
-    SceneObjectType::reload_shaders();
-}
-
-void StaticMeshSceneObjectType::load_shaders()
-{
-    vertex_shader_ = VkHelpers::read_shader("static.vert");
-    fragment_shader_ = VkHelpers::read_shader("static.frag");
 }

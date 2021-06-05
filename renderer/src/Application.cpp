@@ -168,6 +168,12 @@ void Application::on_key_event(GLFWwindow* window, int key, int scancode, int ac
         return;
     }
 
+    if (key == GLFW_KEY_P && action == GLFW_RELEASE)
+    {
+        app->renderer_->toggle_gui();
+        return;
+    }
+
     int coeff = action == GLFW_PRESS ? 1 : (action == GLFW_RELEASE ? -1 : 0);
     app->cam_velocity_.y() += coeff*(key == GLFW_KEY_W)     - coeff*(key == GLFW_KEY_S);
     app->cam_velocity_.x() += coeff*(key == GLFW_KEY_A)     - coeff*(key == GLFW_KEY_D);

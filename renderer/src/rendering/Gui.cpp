@@ -121,7 +121,10 @@ void Gui::tick(float delta_seconds)
 
 void Gui::render()
 {
-    ImGui::Render();
+    if (show_gui)
+    {
+        ImGui::Render();
+    }
 }
 
 void Gui::record_commands(vk::CommandBuffer cb, vk::Framebuffer framebuffer, vk::Rect2D area)
@@ -135,7 +138,10 @@ void Gui::record_commands(vk::CommandBuffer cb, vk::Framebuffer framebuffer, vk:
         static_cast<uint32_t>(clear_colors.size()), clear_colors.data()
     }, vk::SubpassContents::eInline);
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cb);
+    if (show_gui)
+    {
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cb);
+    }
 
     cb.endRenderPass();
 }

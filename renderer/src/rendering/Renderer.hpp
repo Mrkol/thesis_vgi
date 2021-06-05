@@ -35,7 +35,11 @@ public:
 
     void on_window_resized();
 
+    void toggle_gui();
+
     vk::Device get_device() override { return device_.get(); };
+
+    ShaderPtr get_shader(std::string_view name) override;
 
     Scene* debug_get_scene() { return scene_.get(); }
 
@@ -66,6 +70,8 @@ public:
     ~Renderer() override;
 
 private:
+    void recreate_pipelines();
+
     vk::Extent2D chose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities);
 
     // TODO: this procedural-like initialization pattern is questionable
@@ -137,4 +143,6 @@ private:
     };
 
     std::array<PerInflightFrameData, MAX_FRAMES_IN_FLIGHT> per_inflight_frame_data_;
+
+    std::unordered_map<std::string, std::weak_ptr<Shader>> shader_cache_;
 };

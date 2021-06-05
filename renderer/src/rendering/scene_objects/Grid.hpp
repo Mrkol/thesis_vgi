@@ -43,8 +43,8 @@ public:
     void release_vbo(std::size_t grid_size);
 
 private:
-    std::vector<std::byte> vertex_shader_;
-    std::vector<std::byte> fragment_shader_;
+    ShaderPtr vertex_shader_;
+    ShaderPtr fragment_shader_;
 
 
     struct PerSizeData

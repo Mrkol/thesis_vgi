@@ -10,6 +10,7 @@
 #include "Camera.hpp"
 #include "data_primitives/RingBuffer.hpp"
 #include "data_primitives/DescriptorSetRing.hpp"
+#include "ViewMode.hpp"
 
 
 class SceneObjectBase;
@@ -19,13 +20,6 @@ struct PipelineCreationInfo
 {
     vk::RenderPass render_pass;
     vk::Extent2D extent;
-};
-
-enum class ViewMode : uint32_t
-{
-    Normal,
-    Wireframe,
-    SIZE
 };
 
 // vec4 as vulkan seems to hate vec3
@@ -43,8 +37,6 @@ public:
 
     void recreate_pipelines(PipelineCreationInfo info);
 
-    void reload_shaders();
-
     void add_object(std::unique_ptr<SceneObjectBase> object);
 
     void tick(float delta_seconds);
@@ -52,9 +44,6 @@ public:
     void record_commands(vk::CommandBuffer cb);
 
     Camera* debug_get_camera() { return &camera_; }
-
-public:
-    ViewMode view_mode = ViewMode::Normal;
 
 private:
     IResourceManager* resource_manager_;
@@ -79,4 +68,5 @@ private:
     Camera camera_;
 
     DirectionalLight sun_{};
+    ViewMode view_mode_;
 };

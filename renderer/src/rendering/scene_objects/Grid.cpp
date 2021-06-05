@@ -81,27 +81,18 @@ GridSceneObject::~GridSceneObject()
 
 GridSceneObjectType::GridSceneObjectType(IResourceManager* irm)
     : SceneObjectType(irm)
-    , vertex_shader_{VkHelpers::read_shader("debug.vert")}
-    , fragment_shader_{VkHelpers::read_shader("debug.frag")}
+    , vertex_shader_{irm->get_shader("debug.vert")}
+    , fragment_shader_{irm->get_shader("debug.frag")}
 {
 }
 
 vk::UniquePipeline GridSceneObjectType::create_pipeline(PipelineCreateInfo info)
 {
     auto device = resource_manager_->get_device();
-    auto vert_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {},
-        vertex_shader_.size(), reinterpret_cast<const uint32_t*>(vertex_shader_.data())
-    });
-
-    auto frag_module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo{
-        {},
-        fragment_shader_.size(), reinterpret_cast<const uint32_t*>(fragment_shader_.data())
-    });
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{
-        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"},
-        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"}};
+        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, vertex_shader_->get(), "main"},
+        vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, fragment_shader_->get(), "main"}};
 
     vk::VertexInputBindingDescription vertex_input_binding_description
         {0, sizeof(Vertex), vk::VertexInputRate::eVertex};

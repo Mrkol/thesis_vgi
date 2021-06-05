@@ -36,6 +36,9 @@ private:
     std::vector<Vertex> attributes_;
     std::vector<uint32_t> lod_offsets_;
 
+    Eigen::Vector3f bb_min_;
+    Eigen::Vector3f bb_max_;
+
     std::size_t current_lod_{0};
 
     class StaticMeshSceneObjectType* our_type_{nullptr};
@@ -56,14 +59,11 @@ public:
     explicit StaticMeshSceneObjectType(class IResourceManager* irm);
 
     vk::UniquePipeline create_pipeline(PipelineCreateInfo info) override;
-    void reload_shaders() override;
 
 private:
-    void load_shaders();
-
-private:
-    std::vector<std::byte> vertex_shader_;
-    std::vector<std::byte> fragment_shader_;
+    ShaderPtr vertex_shader_;
+    ShaderPtr fragment_shader_;
+    ShaderPtr geom_shader_;
 };
 
 MAKE_SCENE_OBJECT_TYPE_FACTORY(StaticMeshSceneObjectType);

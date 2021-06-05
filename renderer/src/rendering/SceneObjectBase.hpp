@@ -2,14 +2,14 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
+
 #include "ResourceManager.hpp"
+#include "ViewMode.hpp"
 
 
-static constexpr uint32_t OBJECT_DESCRIPTOR_SET_BINDING = 1;
 
 class SceneObjectTypeFactory;
 class SceneObjectType;
-
 
 
 struct TickInfo
@@ -21,6 +21,8 @@ struct TickInfo
 
 class SceneObjectBase
 {
+    friend class Scene;
+
 public:
     virtual void on_type_object_available(SceneObjectType& type) = 0;
 
@@ -42,6 +44,7 @@ public:
 
 private:
     bool alive_{true};
+    bool enabled_{true};
 };
 
 class SceneObjectType
@@ -53,13 +56,12 @@ public:
 
     virtual void record_commands(vk::CommandBuffer cb) {};
 
-    virtual void reload_shaders() {};
-
     struct PipelineCreateInfo
     {
         vk::Extent2D viewport_extents;
         vk::DescriptorSetLayout scene_descriptor_set_layout;
         vk::RenderPass render_pass;
+        ViewMode mode;
     };
 
     virtual vk::UniquePipeline create_pipeline(PipelineCreateInfo info) = 0;

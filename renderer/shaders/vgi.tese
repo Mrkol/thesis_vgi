@@ -41,9 +41,9 @@ layout(set = 1, binding = 0) uniform ObjectUBO {
     uint mip_level_count;
 } object_ubo;
 
-layout(set = 1, binding = 1) uniform sampler2DArray geometry_image;
+layout(set = 1, binding = 2) uniform sampler2DArray geometry_image;
 
-layout(std430, set = 1, binding = 2) readonly buffer ObjectSBO {
+layout(std430, set = 1, binding = 3) readonly buffer ObjectSBO {
     // AFAIK we can't be more specific about how data is layed out here :(
     uint indirection_tables[];
 } object_sbo;
