@@ -164,7 +164,7 @@ std::size_t VirtualTextureSet::bump_region(std::size_t index, std::size_t mip, f
 {
     std::size_t total_size = mip_to_size(mip);
 
-    auto px_size = static_cast<std::size_t>(size * float(total_size - 1) / float(page_side_size - 1));
+    auto px_size = static_cast<std::size_t>(std::ceil(size * float(total_size - 1) / float(page_side_size - 1)));
 
     auto px_x = static_cast<std::size_t>(x * float(total_size - 1) / float(page_side_size - 1));
     auto px_y = static_cast<std::size_t>(y * float(total_size - 1) / float(page_side_size - 1));

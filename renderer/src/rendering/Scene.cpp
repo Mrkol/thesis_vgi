@@ -59,28 +59,27 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         add_object(std::move(vmesh));
     }
 
-    {
-        auto mesh = std::make_unique<StaticMesh>("../../models/rock_assembly_rough/sjzbj_LOD0");
-        mesh->enabled_ = false;
-        mesh->scale.setConstant(0.02f);
-        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(mesh));
-    }
-
-    {
-        auto mesh = std::make_unique<StaticMesh>("../../models/rock_assembly_rough/sjzbj_High");
-        mesh->enabled_ = false;
-        mesh->scale.setConstant(0.02f);
-        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
-        add_object(std::move(mesh));
-    }
-
+//    {
+//        auto mesh = std::make_unique<StaticMesh>("../../models/rock_assembly_rough/sjzbj_LOD0");
+//        mesh->enabled_ = false;
+//        mesh->scale.setConstant(0.02f);
+//        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(mesh));
+//    }
+//
+//    {
+//        auto mesh = std::make_unique<StaticMesh>("../../models/rock_assembly_rough/sjzbj_High");
+//        mesh->enabled_ = false;
+//        mesh->scale.setConstant(0.02f);
+//        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        add_object(std::move(mesh));
+//    }
+//
 //    {
 //        auto mesh = std::make_unique<StaticMesh>("../../models/rock_cliffs_old/uchwaffda_LOD0");
 //        mesh->scale.setConstant(0.02f);
 //        mesh->position << 10, 0, -5;
-//        mesh->rotation = Eigen::AngleAxisf(EIGEN_PI, Eigen::Vector3f::UnitZ())
-//            * Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//        mesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
 //        add_object(std::move(mesh));
 //    }
 //    {

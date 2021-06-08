@@ -208,8 +208,9 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
                 auto ss_size = float(tick_info.resolution.width * tick_info.resolution.height) *
                     node->projected_screenspace_area(raw_ubo.model, tick_info.view, tick_info.proj)
                         * TARGET_POLYGONS_PER_PIXEL;
+                // Might be negative, so clamp first
                 return std::size_t(std::clamp(std::log2(ss_size) / 2.f,
-                    0.5f, float(node->max_tessellation)));
+                    1.f, float(node->max_tessellation)));
             };
 
         auto priority =
@@ -300,7 +301,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
         auto avail_mip = std::clamp(
             std::size_t(float(avail_gi) + std::log2(node->size)),
-            0ul, node->max_tessellation);
+            1ul, node->max_tessellation);
 
         if (avail_mip < data.mip)
         {
