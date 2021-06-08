@@ -27,7 +27,7 @@ public:
 
 private:
     static constexpr std::size_t TEXTURE_MAP_COUNT = 2;
-    std::array<UniqueStbImage, TEXTURE_MAP_COUNT> texture_maps_;
+    std::array<std::filesystem::path, TEXTURE_MAP_COUNT> texture_maps_;
 
     // TODO: Move the atlas to the type object
     HierarchicalAtlas atlas_;
@@ -37,8 +37,7 @@ private:
     RingBuffer vbo_;
     RingBuffer ubo_;
     VirtualTextureSet vgis_;
-    UniqueVmaImage textures_;
-    vk::UniqueImageView textures_view_;
+    TexturePtr texture_;
     vk::UniqueSampler sampler_;
 
     DescriptorSetRing descriptors_;

@@ -31,15 +31,8 @@ struct UBO
 };
 
 StaticMesh::StaticMesh(const std::filesystem::path& model)
-    : texture_maps_{
-        UniqueStbImage{model.parent_path() / "albedo.jpg"},
-        UniqueStbImage{model.parent_path() / "specular.jpg"}}
+    : texture_maps_{model.parent_path() / "albedo.jpg", model.parent_path() / "specular.jpg"}
 {
-    for (auto& map : texture_maps_)
-    {
-        AD_HOC_ASSERT(map.width() == texture_maps_[0].width() && map.height() == texture_maps_[0].height(), "Oops");
-    }
-
     std::vector<std::filesystem::path> lod_paths;
 
     if (auto filename_string = model.filename().string();
@@ -137,62 +130,7 @@ void StaticMesh::on_type_object_available(SceneObjectType& type)
     descriptors_.write_ubo(ubo_, 0);
 
 
-    // TODO: Get rid of copypasta!!!!!!!!!!!!
-    textures_ = irm->create_texture(
-        {static_cast<uint32_t>(texture_maps_[0].width()), static_cast<uint32_t>(texture_maps_[0].height())},
-        texture_maps_.size());
-
-
-    auto cb = irm->begin_single_time_commands();
-
-    textures_.transfer_layout(cb.get(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-        {}, vk::AccessFlagBits::eTransferWrite,
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer);
-
-
-    std::size_t staging_size = TEXTURE_MAP_COUNT * texture_maps_[0].width() * texture_maps_[0].height() * 4;
-    auto staging = irm->create_staging_buffer(staging_size);
-
-    auto mapped = staging.map();
-
-    // TODO: make not fubar
-    for (auto& map : texture_maps_)
-    {
-        std::size_t size = map.width() * map.height() * 4;
-        std::memcpy(mapped, map.data(), size);
-        mapped += size;
-    }
-
-    staging.unmap();
-
-    std::array<vk::BufferImageCopy, TEXTURE_MAP_COUNT> copy_ops;
-    std::size_t curr_offset = 0;
-    for (std::size_t i = 0; i < TEXTURE_MAP_COUNT; ++i)
-    {
-        copy_ops[i] = vk::BufferImageCopy{
-            static_cast<uint32_t>(curr_offset),
-            static_cast<uint32_t>(texture_maps_[i].width()), static_cast<uint32_t>(texture_maps_[i].height()),
-            vk::ImageSubresourceLayers{
-                vk::ImageAspectFlagBits::eColor,
-                0, static_cast<uint32_t>(i), 1
-            },
-            vk::Offset3D{0, 0, 0},
-            vk::Extent3D{
-                static_cast<uint32_t>(texture_maps_[i].width()),
-                static_cast<uint32_t>(texture_maps_[i].height()),
-                1
-            }
-        };
-        curr_offset += texture_maps_[i].width() * texture_maps_[i].height() * 4;
-    }
-
-    cb->copyBufferToImage(staging.get(), textures_.get(), vk::ImageLayout::eTransferDstOptimal, copy_ops);
-
-    textures_.transfer_layout(cb.get(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader);
-
-    irm->finish_single_time_commands(std::move(cb));
+    texture_ = irm->get_texture(texture_maps_);
 
     sampler_ = irm->get_device().createSamplerUnique(vk::SamplerCreateInfo{
         {}, vk::Filter::eLinear, vk::Filter::eLinear,
@@ -203,17 +141,8 @@ void StaticMesh::on_type_object_available(SceneObjectType& type)
         0, false, 1, false, vk::CompareOp::eAlways, 0, 0, vk::BorderColor::eIntOpaqueBlack, false
     });
 
-    textures_view_ = irm->get_device().createImageViewUnique(vk::ImageViewCreateInfo{
-        {}, textures_.get(), vk::ImageViewType::e2DArray, vk::Format::eR8G8B8A8Srgb,
-        vk::ComponentMapping{},
-        vk::ImageSubresourceRange{
-            vk::ImageAspectFlagBits::eColor,
-            0, 1, 0, TEXTURE_MAP_COUNT
-        }
-    });
-
     vk::DescriptorImageInfo info{
-        sampler_.get(), textures_view_.get(), vk::ImageLayout::eShaderReadOnlyOptimal
+        sampler_.get(), texture_->get(), vk::ImageLayout::eShaderReadOnlyOptimal
     };
     descriptors_.write_all(std::vector(descriptors_.size(),
         vk::WriteDescriptorSet{

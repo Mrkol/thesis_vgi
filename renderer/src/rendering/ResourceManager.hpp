@@ -1,10 +1,11 @@
 #pragma once
 
 #include "UniqueVmaBuffer.hpp"
-#include "Shader.hpp"
+#include "data_primitives/Shader.hpp"
 #include "data_primitives/VirtualTextureSet.hpp"
 #include "data_primitives/RingBuffer.hpp"
 #include "data_primitives/DescriptorSetRing.hpp"
+#include "data_primitives/Texture.hpp"
 
 
 class IResourceManager
@@ -13,6 +14,7 @@ public:
     virtual vk::Device get_device() = 0;
 
     virtual ShaderPtr get_shader(std::string_view name) = 0;
+    virtual TexturePtr get_texture(std::span<std::filesystem::path> layers) = 0;
 
     virtual RingBuffer create_ubo(std::size_t size) = 0;
     virtual RingBuffer create_sbo(std::size_t size) = 0;

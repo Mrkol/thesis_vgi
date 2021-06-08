@@ -677,3 +677,23 @@ ShaderPtr Renderer::get_shader(std::string_view name)
 
     return result;
 }
+
+TexturePtr Renderer::get_texture(std::span<std::filesystem::path> layers)
+{
+    std::string name;
+    for (auto& path : layers)
+    {
+        name += path.string();
+    }
+
+    auto& weak = texture_cache_[name];
+    TexturePtr result = weak.lock();
+
+    if (result == nullptr)
+    {
+        result = std::make_shared<Texture>(layers, this);
+        weak = result;
+    }
+
+    return result;
+}

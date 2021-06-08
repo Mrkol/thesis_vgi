@@ -37,13 +37,15 @@ public:
 
     void toggle_gui();
 
-    vk::Device get_device() override { return device_.get(); };
-
-    ShaderPtr get_shader(std::string_view name) override;
 
     Scene* debug_get_scene() { return scene_.get(); }
 
     // begin IResourceManager
+
+    vk::Device get_device() override { return device_.get(); };
+
+    ShaderPtr get_shader(std::string_view name) override;
+    TexturePtr get_texture(std::span<std::filesystem::path> layers) override;
 
     RingBuffer create_ubo(std::size_t size) override;
     RingBuffer create_sbo(std::size_t size) override;
@@ -145,4 +147,5 @@ private:
     std::array<PerInflightFrameData, MAX_FRAMES_IN_FLIGHT> per_inflight_frame_data_;
 
     std::unordered_map<std::string, std::weak_ptr<Shader>> shader_cache_;
+    std::unordered_map<std::string, std::weak_ptr<Texture>> texture_cache_;
 };
