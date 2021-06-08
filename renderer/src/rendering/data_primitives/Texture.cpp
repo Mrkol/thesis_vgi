@@ -7,7 +7,7 @@
 
 Texture::Texture(std::span<std::filesystem::path> layers, IResourceManager* irm)
 {
-    AD_HOC_ASSERT(layers.size() > 0, "Empty textures not supported");
+    AD_HOC_ASSERT(!layers.empty(), "Empty textures not supported");
 
     std::vector<UniqueStbImage> raw;
     raw.reserve(layers.size());
