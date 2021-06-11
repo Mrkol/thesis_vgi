@@ -1,0 +1,4 @@
+$pdf_mode = 5;
+@default_files = ('diploma.tex');
+$out_dir = 'build';
+$interaction = "nonstopmode";
