@@ -58,14 +58,14 @@ StaticMesh::StaticMesh(const std::filesystem::path& model)
     std::unordered_map<Vertex, uint32_t> unique_verts;
     for (const auto& lod : lod_paths)
     {
-        lod_offsets_.push_back(indices_.size());
+        lod_offsets_.push_back(uint32_t(indices_.size()));
 
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
 
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, lod.c_str()))
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, lod.string().c_str()))
         {
             throw std::runtime_error(warn + err);
         }
@@ -100,7 +100,7 @@ StaticMesh::StaticMesh(const std::filesystem::path& model)
             }
         }
     }
-    lod_offsets_.push_back(indices_.size());
+    lod_offsets_.push_back(uint32_t(indices_.size()));
 }
 
 void StaticMesh::on_type_object_available(SceneObjectType& type)

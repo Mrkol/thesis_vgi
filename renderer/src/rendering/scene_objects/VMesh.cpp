@@ -231,7 +231,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
         auto avail_mip = std::clamp(
             std::size_t(float(avail_gi) + std::log2(node->size)),
-            1ul, node->max_tessellation);
+            std::size_t{1}, node->max_tessellation);
 
         if (avail_mip < data.mip)
         {

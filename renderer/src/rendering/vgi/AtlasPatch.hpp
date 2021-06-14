@@ -10,7 +10,7 @@
 
 using NodeIdx = std::size_t;
 
-class AtlasNode;
+struct AtlasNode;
 class AtlasPatch;
 
 class NodeHandle

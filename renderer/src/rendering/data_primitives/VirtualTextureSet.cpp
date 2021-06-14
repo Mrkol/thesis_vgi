@@ -109,7 +109,7 @@ void VirtualTextureSet::bump_page_impl(VirtualTextureSet::PageInfo info, std::si
     }
     cache_state[lru] = info;
 
-    access_indirection_table(info) = lru;
+    access_indirection_table(info) = uint32_t(lru);
     cache_lifetimes[lru] = gen;
 
     for (std::size_t i = 0; i < format_multiplicity; ++i)
