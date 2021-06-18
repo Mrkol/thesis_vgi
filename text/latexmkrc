@@ -1,4 +1,6 @@
 $pdf_mode = 5;
-@default_files = ('diploma.tex');
+@default_files = ('diploma.tex', 'article.tex');
 $out_dir = 'build';
 $interaction = "nonstopmode";
+$compiling_cmd = "mkdir -p build/diploma";
+$success_cmd = "cp -f ./build/diploma.pdf ./diploma.pdf; cp -f ./build/article.pdf ./article.pdf";
