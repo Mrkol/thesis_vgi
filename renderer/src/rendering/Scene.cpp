@@ -47,6 +47,19 @@ Scene::Scene(IResourceManager* irm, PipelineCreationInfo info)
         add_object(std::move(grid));
     }
 
+//    static constexpr int SIZE = 2;
+//    for (int x = -SIZE; x <= SIZE; ++x)
+//    {
+//        for (int y = -SIZE; y <= SIZE; ++y)
+//        {
+//            auto vmesh = std::make_unique<VMesh>("../../models/rock_assembly_rough");
+//            vmesh->position = Eigen::Vector3f{30 * float(x), 0, 15 * float(y)};
+//            vmesh->scale.setConstant(0.02f);
+//            vmesh->rotation = Eigen::AngleAxisf(-EIGEN_PI/2, Eigen::Vector3f::UnitX());
+//            add_object(std::move(vmesh));
+//        }
+//    }
+
 //    {
 //        auto vmesh = std::make_unique<VMesh>("../../models/sphere");
 //        add_object(std::move(vmesh));
@@ -164,10 +177,13 @@ void Scene::tick(float delta_seconds)
     global_uniform_buffer_.write_next(std::span{reinterpret_cast<std::byte*>(&ubo), sizeof(ubo)});
 
     int object_id{0};
+    TickInfo tick_info{ubo.view, ubo.proj, pipeline_creation_info_.extent};
     for (auto& kv : object_types_)
     {
         auto&[type, _, instances] = kv.second;
-        type->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info_.extent});
+
+
+        type->pre_tick(delta_seconds, tick_info);
         for (auto instance : instances)
         {
             ImGui::PushID(object_id++);
@@ -177,11 +193,12 @@ void Scene::tick(float delta_seconds)
 
             if (instance->enabled_)
             {
-                instance->tick(delta_seconds, {ubo.view, ubo.proj, pipeline_creation_info_.extent});
+                instance->tick(delta_seconds, tick_info);
             }
 
             ImGui::PopID();
         }
+        type->post_tick(delta_seconds, tick_info);
 
         std::erase_if(instances, std::not_fn(std::mem_fn(&SceneObjectBase::is_alive)));
     }
@@ -195,11 +212,18 @@ void Scene::tick(float delta_seconds)
 
 void Scene::record_pre_commands(vk::CommandBuffer cb)
 {
-    for (auto& object : scene_objects_)
+    for (auto& kv : object_types_)
     {
-        if (object->enabled_)
+        auto&[type, pipeline, instances] = kv.second;
+
+        type->record_pre_commands(cb);
+
+        for (auto& instance : instances)
         {
-            object->record_pre_commands(cb);
+            if (instance->enabled_)
+            {
+                instance->record_pre_commands(cb);
+            }
         }
     }
 }
@@ -217,6 +241,7 @@ void Scene::record_commands(vk::CommandBuffer cb)
         cb.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, type->get_pipeline_layout(), 0,
             {global_uniforms_descriptor_set}, {});
 
+        type->record_commands(cb);
 
         for (auto& instance : instances)
         {

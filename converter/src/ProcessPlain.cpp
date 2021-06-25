@@ -254,7 +254,7 @@ void process_plain(const std::filesystem::path& plainfile, const std::filesystem
 
     if (debug_output)
     {
-        debug_parametrization_output(clusters_path, quad_info_path, workdir / "parametrized");
+        debug_parametrization_output(clusters_path, parametrization_dir, workdir / "parametrized");
     }
 
     auto resampled_dir = output_dir / "resampled";
@@ -349,7 +349,7 @@ void debug_cluster_output(const std::filesystem::path& folder, const std::filesy
 }
 
 void debug_parametrization_output(const std::filesystem::path& quad_folder,
-    const std::filesystem::path& quad_info_folder, const std::filesystem::path& output)
+    const std::filesystem::path& parametrization_folder, const std::filesystem::path& output)
 {
     ScopedTimer timer("debug cluster output");
 
@@ -363,14 +363,14 @@ void debug_parametrization_output(const std::filesystem::path& quad_folder,
     std::size_t patch_idx = 0;
     for (const auto& entry : std::filesystem::directory_iterator{quad_folder})
     {
-        std::unordered_map<HashableCoords, std::tuple<FloatingNumber, FloatingNumber>> mapping;
+        std::unordered_map<HashableCoords, MappingCoords> mapping;
         {
-            auto info_path = quad_info_folder / entry.path().filename();
+            auto info_path = parametrization_folder / entry.path().filename();
 
             std::vector<MappingElement> elements;
 
             {
-                std::ifstream info{info_path};
+                std::ifstream info{info_path, std::ios_base::binary};
                 elements = read_vector<MappingElement>(info);
             }
 
@@ -388,9 +388,9 @@ void debug_parametrization_output(const std::filesystem::path& quad_folder,
         while (plain.read(reinterpret_cast<char*>(&tri), sizeof(tri)))
         {
             auto[a, b, c] = triangle_verts(tri);
-            auto m_a = mapping[a];
-            auto m_b = mapping[b];
-            auto m_c = mapping[c];
+            auto m_a = mapping.at(a);
+            auto m_b = mapping.at(b);
+            auto m_c = mapping.at(c);
             tri.a.u = std::get<0>(m_a);
             tri.a.v = std::get<1>(m_a);
 

@@ -45,7 +45,7 @@ public:
     vk::Device get_device() override { return device_.get(); };
 
     ShaderPtr get_shader(std::string_view name) override;
-    TexturePtr get_texture(std::span<std::filesystem::path> layers) override;
+    TexturePtr get_texture(std::span<const std::filesystem::path> layers) override;
 
     RingBuffer create_ubo(std::size_t size) override;
     RingBuffer create_sbo(std::size_t size) override;

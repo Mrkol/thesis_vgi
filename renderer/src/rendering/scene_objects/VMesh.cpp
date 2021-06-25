@@ -6,10 +6,11 @@
 
 #include <VkHelpers.hpp>
 #include <Utility.hpp>
+#include <utility>
 
 
 
-static constexpr std::size_t CACHE_SIZE = 128;
+static constexpr std::size_t CACHE_SIZE = 256;
 
 struct PerInstanceData
 {
@@ -29,10 +30,8 @@ struct UBO
     uint32_t mip_level_count;
 };
 
-VMesh::VMesh(const std::filesystem::path& folder)
-    : texture_maps_{folder / "albedo.jpg", folder / "specular.jpg"}
-    , atlas_(folder / "resampled")
-    , current_cut_(atlas_.default_cut())
+VMesh::VMesh(std::filesystem::path  folder)
+    : folder_{std::move(folder)}
 {
 }
 
@@ -48,30 +47,18 @@ void VMesh::on_type_object_available(SceneObjectType& type)
 
     auto irm = type.get_resource_manager();
 
+    model_ = our_type_->get_model(folder_);
+
     vbo_ = irm->create_dynamic_vbo(sizeof(PerInstanceData)
-        * (1ull << atlas_.get_hierarchy_depth()) * atlas_.get_patch_count());
+        * (1ull << model_->atlas.get_hierarchy_depth()) * model_->atlas.get_patch_count());
 
     ubo_ = irm->create_ubo(sizeof(UBO));
     descriptors_ = irm->create_descriptor_set_ring(type.get_instance_descriptor_set_layout());
     descriptors_.write_ubo(ubo_, 0);
 
-    std::vector<std::vector<const std::byte*>> gis;
-    for (std::size_t i = 0; i < atlas_.get_patch_count(); ++i)
-    {
-        auto& current = atlas_.get_gis(i);
-        gis.emplace_back();
-
-        for (auto& gi : current)
-        {
-            gis.back().emplace_back(reinterpret_cast<const std::byte*>(gi.get_data()));
-        }
-    }
-
-    vgis_ = irm->create_svt(CACHE_SIZE, atlas_.get_patch_count(),
-        vk::Format::eR32G32B32A32Sfloat, 2, atlas_.get_min_mip(), std::move(gis));
 
     vk::DescriptorImageInfo descriptor_image_info{
-        vgis_.sampler(), vgis_.view(), vk::ImageLayout::eShaderReadOnlyOptimal
+        model_->vgis.sampler(), model_->vgis.view(), vk::ImageLayout::eShaderReadOnlyOptimal
     };
 
     descriptors_.write_all(std::vector(descriptors_.size(), vk::WriteDescriptorSet{
@@ -80,22 +67,10 @@ void VMesh::on_type_object_available(SceneObjectType& type)
         &descriptor_image_info, nullptr, nullptr
     }));
 
-    descriptors_.write_sbo(vgis_.get_indirection_table_sbo(), 3);
-
-
-    texture_ = irm->get_texture(texture_maps_);
-
-    sampler_ = irm->get_device().createSamplerUnique(vk::SamplerCreateInfo{
-        {}, vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerMipmapMode::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        0, false, 1, false, vk::CompareOp::eAlways, 0, 0, vk::BorderColor::eIntOpaqueBlack, false
-    });
+    descriptors_.write_sbo(model_->vgis.get_indirection_table_sbo(), 3);
 
     vk::DescriptorImageInfo info{
-        sampler_.get(), texture_->get(), vk::ImageLayout::eShaderReadOnlyOptimal
+        model_->sampler.get(), model_->texture->get(), vk::ImageLayout::eShaderReadOnlyOptimal
     };
     descriptors_.write_all(std::vector(descriptors_.size(),
         vk::WriteDescriptorSet{
@@ -120,13 +95,13 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
         model_mat,
         normal_mat,
         CACHE_SIZE,
-        static_cast<uint32_t>(atlas_.get_min_mip()),
-        static_cast<uint32_t>(vgis_.get_mip_level_count()),
+        static_cast<uint32_t>(model_->atlas.get_min_mip()),
+        static_cast<uint32_t>(model_->vgis.get_mip_level_count()),
     };
     ubo_.write_next({reinterpret_cast<std::byte*>(&raw_ubo), sizeof(raw_ubo)});
 
     {
-        current_cut_ = atlas_.default_cut();
+        current_cut_ = model_->atlas.default_cut();
 
         auto nodes = current_cut_.get_nodes();
 
@@ -158,7 +133,7 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
                 return saved;
             };
 
-        uint64_t polygon_limit = vgis_.cache_size_pixels();
+        uint64_t polygon_limit = model_->vgis.cache_size_pixels();
         uint64_t total_polygons = 0;
         std::multimap<int64_t, NodeHandle, std::greater<>> queue;
         for (auto node : nodes)
@@ -220,10 +195,10 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
 
     for (auto&[node, data] : current_cut_)
     {
-        auto avail_gi = vgis_.bump_region(
+        auto avail_gi = model_->vgis.bump_region(
             data.patch_idx,
             std::clamp(std::size_t(float(data.mip) - std::log2(node->size)),
-                atlas_.get_min_mip(), atlas_.get_min_mip() + vgis_.get_mip_level_count() - 1),
+                model_->atlas.get_min_mip(), model_->atlas.get_min_mip() + model_->vgis.get_mip_level_count() - 1),
             node->offset.x(),
             node->offset.y(),
             node->size
@@ -263,13 +238,6 @@ void VMesh::tick(float delta_seconds, TickInfo tick_info)
             ++pidata;
         }
     }
-
-    vgis_.tick();
-}
-
-void VMesh::record_pre_commands(vk::CommandBuffer cb)
-{
-    vgis_.record_commands(cb);
 }
 
 void VMesh::record_commands(vk::CommandBuffer cb)
@@ -294,6 +262,28 @@ VMeshSceneObjectType::VMeshSceneObjectType(IResourceManager* irm)
     , geom_shader_{irm->get_shader("wireframe.geom")}
     , fragment_shader_{irm->get_shader("phong.frag")}
 {
+}
+
+void VMeshSceneObjectType::post_tick(float delta_seconds, TickInfo tick_info)
+{
+    for (auto&[key, model] : models_)
+    {
+        if (auto ptr = model.lock())
+        {
+            ptr->vgis.tick();
+        }
+    }
+}
+
+void VMeshSceneObjectType::record_pre_commands(vk::CommandBuffer cb)
+{
+    for (auto&[key, model] : models_)
+    {
+        if (auto ptr = model.lock())
+        {
+            ptr->vgis.record_commands(cb);
+        }
+    }
 }
 
 vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::PipelineCreateInfo info)
@@ -460,4 +450,49 @@ vk::UniquePipeline VMeshSceneObjectType::create_pipeline(SceneObjectType::Pipeli
         {},
         -1
     }).value;
+}
+
+std::shared_ptr<Model> VMeshSceneObjectType::get_model(const std::filesystem::path& path)
+{
+    auto& weak_ptr = models_[path.string()];
+    auto result = weak_ptr.lock();
+
+    if (result == nullptr)
+    {
+        Model model{HierarchicalAtlas(path / "resampled")};
+
+        std::vector<std::vector<const std::byte*>> gis;
+        for (std::size_t i = 0; i < model.atlas.get_patch_count(); ++i)
+        {
+            auto& current = model.atlas.get_gis(i);
+            gis.emplace_back();
+
+            for (auto& gi : current)
+            {
+                gis.back().emplace_back(reinterpret_cast<const std::byte*>(gi.get_data()));
+            }
+        }
+
+        model.vgis =
+            resource_manager_->create_svt(CACHE_SIZE, model.atlas.get_patch_count(),
+                vk::Format::eR32G32B32A32Sfloat, 2, model.atlas.get_min_mip(), std::move(gis));
+
+        model.texture = resource_manager_->get_texture(std::array{path / "albedo.jpg", path / "specular.jpg"});
+
+        model.sampler = resource_manager_->get_device().createSamplerUnique(vk::SamplerCreateInfo{
+            {}, vk::Filter::eLinear, vk::Filter::eLinear,
+            vk::SamplerMipmapMode::eLinear,
+            vk::SamplerAddressMode::eClampToEdge,
+            vk::SamplerAddressMode::eClampToEdge,
+            vk::SamplerAddressMode::eClampToEdge,
+            0, false, 1, false, vk::CompareOp::eAlways, 0, 0, vk::BorderColor::eIntOpaqueBlack, false
+        });
+
+
+
+        result = std::make_shared<Model>(std::move(model));
+        weak_ptr = result;
+    }
+
+    return result;
 }

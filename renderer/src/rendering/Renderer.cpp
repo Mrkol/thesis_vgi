@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "SceneObjectBase.hpp"
+#include "Utility.hpp"
 
 
 constexpr std::array DEVICE_EXTENSIONS{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -83,9 +84,24 @@ Renderer::Renderer(vk::Instance instance, vk::UniqueSurfaceKHR surface,
     , vulkan_instance_{instance}
     , display_surface_{std::move(surface)}
 {
-    // TODO: Proper device selection
-    auto pdevices = vulkan_instance_.enumeratePhysicalDevices();
-    physical_device_ = pdevices.front();
+    for (auto& dev : vulkan_instance_.enumeratePhysicalDevices())
+    {
+        auto props = dev.getProperties();
+        if (props.deviceType == vk::PhysicalDeviceType::eVirtualGpu
+            || props.deviceType == vk::PhysicalDeviceType::eCpu)
+        {
+            continue;
+        }
+
+        auto feats = dev.getFeatures();
+        if (feats.tessellationShader && feats.geometryShader)
+        {
+            physical_device_ = dev;
+            break;
+        }
+    }
+
+    AD_HOC_ASSERT(physical_device_ != vk::PhysicalDevice{}, "No suitable device found!");
 
     queue_family_indices_ = chose_queue_families(physical_device_, display_surface_.get());    
 
@@ -678,7 +694,7 @@ ShaderPtr Renderer::get_shader(std::string_view name)
     return result;
 }
 
-TexturePtr Renderer::get_texture(std::span<std::filesystem::path> layers)
+TexturePtr Renderer::get_texture(std::span<const std::filesystem::path> layers)
 {
     std::string name;
     for (auto& path : layers)

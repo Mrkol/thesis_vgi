@@ -11,7 +11,7 @@
 class Texture : public std::enable_shared_from_this<Texture>
 {
 public:
-    explicit Texture(std::span<std::filesystem::path> layers, class IResourceManager* irm);
+    explicit Texture(std::span<const std::filesystem::path> layers, class IResourceManager* irm);
 
     vk::ImageView get() const { return textures_view_.get(); }
 

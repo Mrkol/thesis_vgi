@@ -7,6 +7,7 @@
 #include <Eigen/Dense>
 
 #include "VkHelpers.hpp"
+#include "Shader.hpp"
 
 
 struct Vertex
@@ -132,16 +133,13 @@ void Resampler::build_pipeline()
         return device->createShaderModuleUnique(info);
     };
 
-    auto vert_source = VkHelpers::read_shader("resampling.vert");
-    auto vert_module = create_shader_module(vert_source);
+    auto vert = Shader(device.get(), "resampling.vert");
     vk::PipelineShaderStageCreateInfo vert_info
-        {{}, vk::ShaderStageFlagBits::eVertex, vert_module.get(), "main"};
+        {{}, vk::ShaderStageFlagBits::eVertex, vert.get(), "main"};
 
-
-    auto frag_source = VkHelpers::read_shader("resampling.frag");
-    auto frag_module = create_shader_module(frag_source);
+    auto frag = Shader(device.get(), "resampling.frag");
     vk::PipelineShaderStageCreateInfo frag_info
-        {{}, vk::ShaderStageFlagBits::eFragment, frag_module.get(), "main"};
+        {{}, vk::ShaderStageFlagBits::eFragment, frag.get(), "main"};
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{vert_info, frag_info};
 
@@ -259,7 +257,7 @@ void Resampler::build_pipeline()
         0,
         {},
         -1
-    });
+    }).value;
 
 
     vk::PipelineInputAssemblyStateCreateInfo line_input_assembly_info{
@@ -282,7 +280,7 @@ void Resampler::build_pipeline()
         0,
         {},
         -1
-    });
+    }).value;
 
     {
         VmaAllocatorCreateInfo info {

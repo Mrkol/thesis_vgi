@@ -52,7 +52,11 @@ class SceneObjectType
 public:
     explicit SceneObjectType(IResourceManager* irm) : resource_manager_(irm) {};
 
-    virtual void tick(float delta_seconds, TickInfo tick_info) {};
+    virtual void pre_tick(float delta_seconds, TickInfo tick_info) {};
+
+    virtual void post_tick(float delta_seconds, TickInfo tick_info) {};
+
+    virtual void record_pre_commands(vk::CommandBuffer cb) {};
 
     virtual void record_commands(vk::CommandBuffer cb) {};
 

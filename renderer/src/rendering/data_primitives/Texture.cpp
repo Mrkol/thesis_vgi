@@ -5,7 +5,7 @@
 #include "Utility.hpp"
 
 
-Texture::Texture(std::span<std::filesystem::path> layers, IResourceManager* irm)
+Texture::Texture(std::span<const std::filesystem::path> layers, IResourceManager* irm)
 {
     AD_HOC_ASSERT(!layers.empty(), "Empty textures not supported");
 
