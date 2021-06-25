@@ -27,7 +27,7 @@
 \newfontfamily\englishfontsf{Arial}
 \newfontfamily\englishfonttt{Courier New}
 
-\linespread{1.25}
+\linespread{1.5}
 
 \usepackage[backend=biber,
   bibencoding=utf8,
@@ -64,44 +64,52 @@
 \renewcommand*{\maketitle}{
 \begin{titlepage}
   \begin{center}
+    \linespread{1}
+    \small
     Федеральное государственное автономное образовательное учреждение\break высшего образования\par
-    <<Московский физико-технический институт (государственный университет)>>\par
-    Физтех-школа прикладной математики и информатики\par
-    Кафедра корпоративных информационных систем 1С\par
+    <<Московский физико-технический институт \break (национальный исследовательский университет)>>\par
+    Физтех-школа Прикладной Математики и Информатики\par
+    Кафедра корпоративных информационных систем\par
   \end{center}
 %
-  {\bf Направление подготовки}: 01.03.02 Прикладная математика и информатика\newline
-  {\bf Направленность (профиль) подготовки}: Прикладная математика и компьютерные науки\par
+  {
+    \small
+    {\bf Направление подготовки / специальность}: 01.03.02 Прикладная математика и информатика\newline
+    {\bf Направленность (профиль) подготовки}: Прикладная математика и компьютерные науки
+  }
 %
   {
     \topskip0pt
     \vspace*{\fill}
     \begin{center}
-      {\bf\LARGE Имплементация виртуализации геометрии
-      \break в рендеринге реального времени}\par
+      {\bf\Large ИМПЛЕМЕНТАЦИЯ ВИРТУАЛИЗАЦИИ ГЕОМЕТРИИ
+      \break В РЕНДЕРИНГЕ РЕАЛЬНОГО ВРЕМЕНИ}\par
       (бакалаврская работа)
     \end{center}
     \vspace*{\fill}
   }
 %
   \hfill
-  \begin{minipage}[t]{7cm}
+  \begin{minipage}[t]{8cm}
     {\bf Студент: \newline}
     Санду Роман Александрович\newline
     \vspace{-3mm}
-    \rule{7cm}{0.15mm}
-    \centerline{\small\it (подпись студента)}\newline
+    \rule{8cm}{0.15mm}
+    \centerline{\scriptsize\it (подпись студента)}\newline
+%
     {\bf Научный руководитель: \newline}
     Агафонова Татьяна Николаевна\newline
     \vspace{-3mm}
-    \rule{7cm}{0.15mm}
-    \centerline{\small\it (подпись научного руководителя)}
+    \rule{8cm}{0.15mm}
+    \centerline{\scriptsize\it (подпись научного руководителя)}
+%
+    {\bf Консультант: \newline}
+    к.ф.-м.н. Фролов Владимир Александрович\newline
+    \vspace{-3mm}
+    \rule{8cm}{0.15mm}
+    \centerline{\scriptsize\it (подпись консультанта)}
   \end{minipage}
-    % Студент \hfill Санду Р.А.\par
-    % Научный руководитель к.ф-м.н. \underline{\hfill} Агафонова Т.Н.\par
-    % Зав. кафедрой д.ф-м.н., профессор \underline{\hfill} Нуралиев Б.Г.\par
-%
-%
+
     \vspace*{\fill}
     \begin{center}
       Москва 2021
